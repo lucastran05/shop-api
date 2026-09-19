@@ -1,0 +1,28 @@
+import dotenv from 'dotenv';
+import app from './app.js';
+
+// Load biến môi trường từ .env
+dotenv.config();
+
+const PORT = process.env.PORT || 5000;
+
+// Khởi động server
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server is listening at: http://localhost:${PORT}`);
+  console.log(`📡 Health check URL: http://localhost:${PORT}/api/health`);
+});
+
+// Xử lý các lỗi bất thường (Unhandled Rejection)
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION! 💥 Đang đóng server...');
+  console.error(err);
+  server.close(() => {
+    process.exit(1);
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION! 💥 Đang tắt tiến trình...');
+  console.error(err);
+  process.exit(1);
+});
