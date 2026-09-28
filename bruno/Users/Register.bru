@@ -1,0 +1,36 @@
+meta {
+  name: Register User (UUID & rf_token)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/users/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Lucas Tran",
+    "email": "lucas@example.com",
+    "password": "Password123"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data) {
+    const data = res.getBody().data;
+    if (data.accessToken) {
+      bru.setEnvVar("accessToken", data.accessToken);
+      bru.setEnvVar("token", data.accessToken);
+    }
+    if (data.refreshToken) {
+      bru.setEnvVar("refreshToken", data.refreshToken);
+    }
+  }
+}

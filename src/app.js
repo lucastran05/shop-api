@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import apiRoutes from './routes/index.js';
 
 const app = express();
 
@@ -21,9 +22,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Root API Router (Placeholder - sẽ import router từ src/routes)
-// import apiRoutes from './routes/index.js';
-// app.use('/api/v1', apiRoutes);
+// Root API Router
+app.use('/api/v1', apiRoutes);
 
 // 404 Not Found Handler
 app.use((req, res, next) => {
@@ -36,10 +36,15 @@ app.use((req, res, next) => {
 // Global Error Handler
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
+
+  // Ghi log lỗi phía server nếu là lỗi nghiêm trọng (500)
+  if (statusCode >= 500) {
+    console.error('💥 Lỗi máy chủ:', err);
+  }
+
   res.status(statusCode).json({
     status: 'error',
     message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });
 

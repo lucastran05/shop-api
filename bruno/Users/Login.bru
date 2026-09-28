@@ -1,0 +1,35 @@
+meta {
+  name: Login User
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/users/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "lucas@example.com",
+    "password": "Password123"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody()?.data) {
+    const data = res.getBody().data;
+    if (data.accessToken) {
+      bru.setEnvVar("accessToken", data.accessToken);
+      bru.setEnvVar("token", data.accessToken);
+    }
+    if (data.refreshToken) {
+      bru.setEnvVar("refreshToken", data.refreshToken);
+    }
+  }
+}
