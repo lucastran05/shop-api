@@ -13,14 +13,14 @@ const startServer = async () => {
   await initDB();
 
   const server = app.listen(PORT, () => {
-    console.log(`🚀 Server is listening at: http://localhost:${PORT}`);
-    console.log(`📡 Health check URL: http://localhost:${PORT}/api/health`);
-    console.log(`👤 Users endpoints: http://localhost:${PORT}/api/v1/users`);
+    console.log(`[INFO] Server is listening at: http://localhost:${PORT}`);
+    console.log(`[INFO] Health check URL: http://localhost:${PORT}/api/health`);
+    console.log(`[INFO] Users endpoints: http://localhost:${PORT}/api/v1/users`);
   });
 
   // Xử lý các lỗi bất thường (Unhandled Rejection)
   process.on('unhandledRejection', (err) => {
-    console.error('UNHANDLED REJECTION! 💥 Đang đóng server...');
+    console.error('[ERROR] Unhandled Rejection! Đang đóng server...');
     console.error(err);
     server.close(() => {
       process.exit(1);
@@ -28,7 +28,7 @@ const startServer = async () => {
   });
 
   process.on('uncaughtException', (err) => {
-    console.error('UNCAUGHT EXCEPTION! 💥 Đang tắt tiến trình...');
+    console.error('[ERROR] Uncaught Exception! Đang tắt tiến trình...');
     console.error(err);
     process.exit(1);
   });
