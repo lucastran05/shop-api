@@ -14,7 +14,7 @@ class AuthController {
         });
       }
 
-      if (password.length < 6) {
+      if (typeof password !== 'string' || password.length < 6) {
         return res.status(400).json({
           status: 'error',
           message: 'Mật khẩu phải có ít nhất 6 ký tự',
@@ -61,7 +61,7 @@ class AuthController {
   static async refreshToken(req, res, next) {
     try {
       // Hỗ trợ cả 2 định dạng field: refreshToken hoặc rf_token
-      const token = req.body.refreshToken || req.body.rf_token;
+      const token = req.body?.refreshToken || req.body?.rf_token;
 
       if (!token) {
         return res.status(400).json({
@@ -104,6 +104,13 @@ class AuthController {
         return res.status(404).json({
           status: 'error',
           message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      if (user.active === false) {
+        return res.status(403).json({
+          status: 'error',
+          message: 'Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa',
         });
       }
 

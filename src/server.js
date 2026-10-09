@@ -16,6 +16,11 @@ const startServer = async () => {
     console.log(`[INFO] Server is listening at: http://localhost:${PORT}`);
     console.log(`[INFO] Health check URL: http://localhost:${PORT}/api/health`);
     console.log(`[INFO] Users endpoints: http://localhost:${PORT}/api/v1/users`);
+    console.log(`[INFO] Products endpoints: http://localhost:${PORT}/api/v1/products`);
+    console.log(`[INFO] Payments endpoints: http://localhost:${PORT}/api/v1/payments`);
+    console.log(`[INFO] Chat endpoints: http://localhost:${PORT}/api/v1/chat`);
+    console.log(`[INFO] Shop endpoints: http://localhost:${PORT}/api/v1/shop`);
+    console.log(`[INFO] Notifications endpoints: http://localhost:${PORT}/api/v1/notifications`);
   });
 
   // Xử lý các lỗi bất thường (Unhandled Rejection)
