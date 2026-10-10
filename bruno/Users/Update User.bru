@@ -1,0 +1,40 @@
+meta {
+  name: Update User
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/v1/users/{{userId}}
+  body: json
+  auth: bearer
+}
+
+params:path {
+  userId: 436218af-6b95-478a-b898-d7ba5d2ff119
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Lucas Tran Cap Nhat",
+    "phone": "0987654321",
+    "address": "789 Đường 3 Tháng 2, Quận 10, TP.HCM",
+    "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.user.name).to.equal("Lucas Tran Cap Nhat");
+  });
+}

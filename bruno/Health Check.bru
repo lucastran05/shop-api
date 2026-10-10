@@ -5,7 +5,14 @@ meta {
 }
 
 get {
-  url: http://localhost:5000/api/health
+  url: {{baseUrl}}/api/health
   body: none
   auth: none
+}
+
+tests {
+  test("Server is healthy", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+  });
 }

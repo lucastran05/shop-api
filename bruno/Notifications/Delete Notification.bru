@@ -1,0 +1,27 @@
+meta {
+  name: Delete Notification
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/notifications/{{notificationId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  notificationId: d1e2f3a4-b5c6-7890-1234-56789abcdef0
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().message).to.equal("Xóa thông báo thành công");
+  });
+}

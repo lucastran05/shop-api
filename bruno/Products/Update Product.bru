@@ -1,0 +1,41 @@
+meta {
+  name: Update Product
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/api/v1/products/{{productId}}
+  body: json
+  auth: bearer
+}
+
+params:path {
+  productId: b3e34bcf-697b-402a-a9a3-55913e7ce001
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "price": 2390000,
+    "stock": 42,
+    "featured": true,
+    "deposit": true,
+    "depositRate": 30
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.product).to.have.property("price");
+  });
+}

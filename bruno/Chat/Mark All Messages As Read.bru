@@ -1,0 +1,33 @@
+meta {
+  name: Mark All Messages As Read
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/chat/read-all
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "owner": "lucas@example.com"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("updatedCount");
+  });
+}

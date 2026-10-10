@@ -1,0 +1,40 @@
+meta {
+  name: Create User (Admin)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/users
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Tran Van Quan Ly",
+    "email": "manager01@shop.vn",
+    "password": "ManagerPass123",
+    "role": "manager",
+    "phone": "0912345678",
+    "address": "456 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP.HCM",
+    "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb",
+    "active": true
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.user).to.have.property("id");
+  });
+}

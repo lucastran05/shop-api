@@ -1,0 +1,49 @@
+meta {
+  name: Update Shop Info (Admin)
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/shop
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "ABC Tech Store Official",
+    "description": "Hệ sinh thái thiết bị & giải pháp công nghệ chính hãng hàng đầu Việt Nam",
+    "phone": "0988776655",
+    "email": "hotro@abctech.vn",
+    "address": "456 Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM",
+    "mapUrl": "https://maps.google.com/?q=ABCTechStore",
+    "logoUrl": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
+    "bannerUrl": "https://images.unsplash.com/photo-1550745165-9bc0b252726f",
+    "socialLinks": [
+      { "platform": "facebook", "url": "https://facebook.com/abctechstore" },
+      { "platform": "youtube", "url": "https://youtube.com/@abctechstore" }
+    ],
+    "commerce": {
+      "freeShippingFrom": 500000,
+      "shippingFee": 30000,
+      "depositRate": 0.2
+    }
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.shop.name).to.equal("ABC Tech Store Official");
+  });
+}

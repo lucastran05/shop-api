@@ -1,54 +1,10 @@
-# Tài Liệu API Người Dùng và Cơ Chế Bảo Mật (Users API & Security Mechanism)
+# Tài Liệu API Quản Lý Người Dùng & Phân Quyền (Users API & RBAC)
 
-Tài liệu chi tiết về API xác thực, phân quyền và cơ chế bảo mật cho ứng dụng Shop API, sử dụng **UUID (v4)** làm khóa chính, **Access Token & Refresh Token** qua JWT với thuật toán SHA-256 hash và cơ sở dữ liệu **PostgreSQL**.
-
----
-
-## 1. Tổng Quan Cơ Chế Bảo Mật
-
-### 1.1. Phân Tách Rõ Ràng Access Token & Refresh Token (Token Separation)
-- `accessToken`:
-  - **Thời hạn:** 15 phút (`JWT_ACCESS_EXPIRES_IN=15m`).
-  - **Mục đích:** Truy cập các endpoint yêu cầu xác thực (`Authorization: Bearer <accessToken>`).
-  - **Claim bảo mật:** Chứa `token_type: 'access'`, `id`, `email`, `role`, và `jti` (UUID ngẫu nhiên chống replay).
-  - Không thể dùng `accessToken` làm `refreshToken` ở endpoint cấp mới token.
-- `refreshToken`:
-  - **Thời hạn:** 7 ngày (`JWT_REFRESH_EXPIRES_IN=7d`).
-  - **Mục đích:** Gửi lên endpoint `/users/refresh-token` (hoặc `/rf-token`) để lấy `accessToken` mới.
-  - **Claim bảo mật:** Chứa `token_type: 'refresh'`, `id`, và `jti`.
-  - Không thể dùng `refreshToken` làm `accessToken` ở các endpoint bảo vệ nghiệp vụ (`/me`, `/products`, `/payments`,...).
-
-### 1.2. Băm Mật Mã Refresh Token Trong Database (SHA-256 Hash Storage)
-- Refresh Token tuyệt đối **không lưu dạng văn bản thô (plain-text)** trong database.
-- Cột `rf_token` trong bảng `users` lưu chuỗi băm **SHA-256** của Refresh Token.
-- Khi rò rỉ dữ liệu hoặc backup SQL bị lộ, kẻ tấn công không thể sử dụng dữ liệu trong bảng để mạo danh hay cấp mới `accessToken`.
-- Hệ thống hỗ trợ backward compatibility tự động với dữ liệu cũ.
-
-### 1.3. Refresh Token Rotation (RTR), Chống Race Condition & Phát Hiện Tái Sử Dụng Token
-- Mỗi lần gọi `/users/refresh-token`, hệ thống sinh ra một cặp `accessToken` MỚI và `refreshToken` MỚI.
-- Token cũ ngay lập tức bị vô hiệu hóa trong database.
-- **Xử lý Race Condition khi nhiều request đồng thời (RFC 6819 Concurrency Mitigation):** Khi ứng dụng web (SPA/Mobile) gửi nhiều request đồng thời (ví dụ nhiều components cùng hết hạn access token và gọi refresh token cùng lúc), hệ thống tự động đồng bộ hóa tác vụ đang chạy (`in-flight promise deduplication`), chia sẻ cặp token mới đồng nhất cho các request đồng thời thay vì coi nhầm request đến sau là token reuse attack.
-- **Phát hiện tái sử dụng (Reuse Detection):** Nếu một Refresh Token cũ đã bị xoay vòng hoặc thu hồi nhưng lại được gửi lên tuần tự sau đó (dấu hiệu token bị đánh cắp và kẻ tấn công cố dùng lại), hệ thống sẽ:
-  1. Hủy ngay lập tức phiên đăng nhập hiện tại của người dùng (`rf_token = NULL`).
-  2. Trả về mã lỗi `403 Forbidden` kèm cảnh báo bảo mật, buộc đăng nhập lại từ đầu.
-
-### 1.4. Thu Hồi Phiên Khi Đổi Mật Khẩu & Kiểm Tra Trạng Thái Tài Khoản
-- **Đổi mật khẩu / Khóa tài khoản:** Khi người dùng đổi mật khẩu hoặc quản trị viên cập nhật trạng thái `active = false`, toàn bộ `rf_token` trong DB sẽ bị hủy ngay lập tức (`rf_token = NULL`), buộc mọi thiết bị/phiên cũ phải đăng nhập lại với thông tin mới.
-- **Khóa tài khoản (`active = false`):**
-  - Chặn đăng nhập tại `/users/login` (HTTP 403).
-  - Chặn làm mới token tại `/users/refresh-token` và thu hồi `rf_token` (HTTP 403).
-  - Chặn lấy thông tin tại `/users/me` (HTTP 403).
-
-### 1.5. Chống Leo Thang Đặc Quyền (Privilege Escalation Protection)
-- Người dùng thông thường không có quyền tự đổi vai trò (`role`) hoặc trạng thái (`active`) của mình tại `PUT /users/:id`.
-- Danh sách các cột cập nhật trong `UserModel` được bảo vệ bằng Allowlist chống SQL injection vào tên cột.
-
-### 1.6. Giới Hạn Tần Suất Gửi Yêu Cầu (Rate Limiting)
-- Các endpoint nhạy cảm (`/register`, `/login`, `/refresh-token`) được bảo vệ bằng Rate Limiter để chống Brute Force và từ chối dịch vụ (DDoS).
+Tài liệu chi tiết về API quản lý người dùng (User Management), cấu trúc cơ sở dữ liệu PostgreSQL, phân quyền theo vai trò (Role-Based Access Control - RBAC) và các chính sách bảo mật cho ứng dụng **Shop API**.
 
 ---
 
-## 2. Cấu Trúc Bảng Dữ Liệu `users` (PostgreSQL)
+## 1. Cấu Trúc Bảng Dữ Liệu `users` (PostgreSQL)
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -69,169 +25,370 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ```
 
-| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-| :--- | :--- | :--- | :--- |
-| `id` | `UUID` | PRIMARY KEY | Khóa chính ngẫu nhiên duy nhất (UUID v4) |
-| `name` | `VARCHAR(100)` | NOT NULL | Tên người dùng |
-| `email` | `VARCHAR(255)` | UNIQUE, NOT NULL | Email dùng để đăng nhập |
-| `password` | `VARCHAR(255)` | NOT NULL | Mật khẩu băm (bcrypt hash) |
-| `role` | `VARCHAR(50)` | DEFAULT 'customer' | Vai trò (`customer`, `admin`, `manager`) |
-| `rf_token` | `TEXT` | NULL | SHA-256 hash của Refresh Token mới nhất |
-| `active` | `BOOLEAN` | DEFAULT TRUE | Trạng thái hoạt động của tài khoản |
-| `created_at`| `TIMESTAMP WITH TIME ZONE` | DEFAULT CURRENT_TIMESTAMP | Ngày tạo |
-| `updated_at`| `TIMESTAMP WITH TIME ZONE` | DEFAULT CURRENT_TIMESTAMP | Ngày cập nhật |
+### Chi tiết các cột:
+| Cột | Kiểu dữ liệu | Ràng buộc | Mặc định | Mô tả |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `UUID` | PRIMARY KEY | `gen_random_uuid()` | Định danh người dùng duy nhất toàn cầu (UUID v4) |
+| `name` | `VARCHAR(100)` | NOT NULL | - | Họ và tên người dùng |
+| `email` | `VARCHAR(255)` | UNIQUE, NOT NULL | - | Địa chỉ email đăng nhập (chuẩn hóa chữ thường) |
+| `password` | `VARCHAR(255)` | NOT NULL | - | Chuỗi mật khẩu đã được băm (bcrypt hash) |
+| `role` | `VARCHAR(50)` | - | `'customer'` | Vai trò người dùng (`customer`, `manager`, `admin`) |
+| `rf_token` | `TEXT` | NULL | NULL | Chuỗi băm SHA-256 của Refresh Token mới nhất |
+| `phone` | `VARCHAR(25)` | NULL | NULL | Số điện thoại liên hệ |
+| `address` | `TEXT` | NULL | NULL | Địa chỉ giao hàng mặc định |
+| `avatar` | `TEXT` | NULL | NULL | Đường dẫn ảnh đại diện (URL) |
+| `active` | `BOOLEAN` | - | `TRUE` | Trạng thái tài khoản (`true`: hoạt động, `false`: khóa) |
+| `created_at` | `TIMESTAMPTZ` | - | `CURRENT_TIMESTAMP` | Thời điểm tạo bản ghi |
+| `updated_at` | `TIMESTAMPTZ` | - | `CURRENT_TIMESTAMP` | Thời điểm cập nhật bản ghi gần nhất |
 
 ---
 
-## 3. Ma Trận Phân Quyền API Toàn Hệ Thống (RBAC)
+## 2. Ma Trận Phân Quyền (RBAC) & Nguyên Tắc Bảo Mật
 
-| Endpoint | Phương thức | Quyền truy cập | Mô tả bảo vệ |
+### 2.1. Ma Trận Quyền Truy Cập
+| Endpoint | Phương thức | Vai trò cho phép | Ghi chú kiểm soát quyền |
 | :--- | :--- | :--- | :--- |
-| `/api/v1/users/register` | `POST` | Public (Rate Limited) | Đăng ký tài khoản (validate email, password) |
-| `/api/v1/users/login` | `POST` | Public (Rate Limited) | Đăng nhập, kiểm tra `active`, cấp cặp token |
-| `/api/v1/users/refresh-token` | `POST` | Public (Rate Limited) | Cấp mới token (RTR + Reuse Detection) |
-| `/api/v1/users/me` | `GET` | Bearer Token | Lấy thông tin cá nhân hiện tại |
-| `/api/v1/users/logout` | `POST` | Bearer Token | Đăng xuất, xóa `rf_token` |
-| `/api/v1/users` | `GET` | Admin, Manager | Xem danh sách người dùng toàn hệ thống |
-| `/api/v1/users` | `POST` | Admin | Quản trị viên tạo người dùng với role tùy chọn |
-| `/api/v1/users/:id` | `GET` | Chính chủ hoặc Admin/Manager | Xem chi tiết người dùng |
-| `/api/v1/users/:id` | `PUT` | Chính chủ hoặc Admin | Sửa thông tin (chặn leo thang quyền với user thường) |
-| `/api/v1/users/:id` | `DELETE`| Admin | Xóa tài khoản (không cho tự xóa chính mình) |
-| `/api/v1/products` | `GET` | Public | Xem danh sách sản phẩm |
-| `/api/v1/products/categories` | `GET` | Public | Xem danh mục sản phẩm |
-| `/api/v1/products/:id` | `GET` | Public | Xem chi tiết sản phẩm |
-| `/api/v1/products` | `POST` | Admin, Manager | Thêm sản phẩm mới vào kho |
-| `/api/v1/products/:id` | `PUT` | Admin, Manager | Chỉnh sửa sản phẩm |
-| `/api/v1/products/:id` | `DELETE`| Admin, Manager | Xóa sản phẩm |
-| `/api/v1/products/bulk-delete` | `POST` | Admin, Manager | Xóa nhiều sản phẩm |
-| `/api/v1/payments` | `GET` | Bearer Token | User xem lịch sử của mình; Admin xem toàn bộ |
-| `/api/v1/payments/:id` | `GET` | Chính chủ hoặc Admin | Xem chi tiết giao dịch thanh toán |
-| `/api/v1/payments` | `POST` | Bearer Token | Tạo thanh toán (gán chặt với `user_id` người gửi) |
-| `/api/v1/payments/:id/status` | `PATCH` | Admin, Manager | Cập nhật trạng thái giao dịch (completed,...) |
-| `/api/v1/payments/:id` | `DELETE`| Admin | Xóa bản ghi thanh toán |
-| `/api/v1/shop` | `GET` | Public | Xem thông tin cấu hình cửa hàng |
-| `/api/v1/shop` | `POST`, `PUT` | Admin | Cập nhật cấu hình cửa hàng |
-| `/api/v1/shop/reset` | `POST`, `DELETE`| Admin | Khôi phục cấu hình cửa hàng về mặc định |
-| `/api/v1/chat/conversations` | `GET` | Admin, Manager | Quản lý xem toàn bộ các cuộc hội thoại |
-| `/api/v1/chat/messages` | `GET`, `POST` | Bearer Token | Khách hàng chỉ trao đổi trong hội thoại của mình |
-| `/api/v1/notifications` | `GET` | Bearer Token | Nhận thông báo của chính mình |
-| `/api/v1/notifications` | `POST` | Admin, Manager | Phát thông báo hệ thống |
+| `GET /api/v1/users` | `GET` | `admin`, `manager` | Quản trị viên/quản lý xem danh sách người dùng toàn hệ thống |
+| `POST /api/v1/users` | `POST` | `admin` | Chỉ `admin` mới được tạo người dùng trực tiếp kèm chọn role |
+| `GET /api/v1/users/:id` | `GET` | `admin`, `manager`, hoặc **Chính chủ** | Khách hàng chỉ xem được chính mình; nhân viên xem được người khác |
+| `PUT /api/v1/users/:id` | `PUT` | `admin`, hoặc **Chính chủ** | Khách hàng sửa thông tin bản thân; Chống đổi `role` và `active` |
+| `DELETE /api/v1/users/:id` | `DELETE` | `admin` | Xóa tài khoản; Chặn admin tự xóa tài khoản của chính mình |
+
+### 2.2. Chống Leo Thang Đặc Quyền (Privilege Escalation Protection)
+- Khi người dùng thông thường (`role: customer`) thực hiện cập nhật tại `PUT /api/v1/users/:id`, hệ thống tự động loại bỏ các trường `role` và `active` khỏi payload cập nhật (`delete updatePayload.role`, `delete updatePayload.active`).
+- Quản trị viên (`admin`) là vai trò duy nhất có thể phân quyền hoặc thay đổi trạng thái kích hoạt của người dùng khác.
+
+### 2.3. Thu Hồi Phiên Đăng Nhập Tức Thì (Session Revocation)
+- **Đổi mật khẩu:** Khi mật khẩu của người dùng được cập nhật thành công, toàn bộ `rf_token` trong DB sẽ bị hủy ngay lập tức (`rf_token = NULL`).
+- **Khóa tài khoản (`active: false`):** Ngay khi tài khoản bị vô hiệu hóa, `rf_token` bị thu hồi ngay lập tức, chặn làm mới token và chặn đăng nhập tại tất cả các thiết bị.
 
 ---
 
-## 4. Chi Tiết Các Endpoint Xác Thực
+## 3. Chi Tiết Các Endpoint Quản Lý Người Dùng
 
-### 4.1. Đăng ký tài khoản (`POST /users/register`)
-- **Headers:** `Content-Type: application/json`
-- **Body:**
-  ```json
-  {
-    "name": "Lucas Tran",
-    "email": "lucas@example.com",
-    "password": "Password123"
-  }
-  ```
-- **Response Thành công (`201 Created`):**
-  ```json
-  {
-    "status": "success",
-    "message": "Đăng ký tài khoản thành công",
-    "data": {
-      "user": {
+### 3.1. Lấy Danh Sách Người Dùng (Get All Users)
+- **Mục đích:** Xem danh sách người dùng toàn hệ thống có hỗ trợ phân trang, tìm kiếm theo từ khóa và lọc theo vai trò, trạng thái kích hoạt.
+- **Method & Path:** `GET /api/v1/users`
+- **Authentication/Authorization:** `Bearer Token` (`accessToken`). Yêu cầu vai trò: `admin` hoặc `manager`.
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Accept: application/json`
+- **Query Parameters:**
+  | Tên | Kiểu | Bắt buộc | Mặc định | Mô tả |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `page` | `integer` | Không | `1` | Số thứ tự trang (bắt đầu từ 1) |
+  | `limit` | `integer` | Không | `20` | Số lượng bản ghi trên một trang |
+  | `search` | `string` | Không | `""` | Từ khóa tìm kiếm theo tên hoặc email |
+  | `role` | `string` | Không | `""` | Lọc theo vai trò: `customer`, `manager`, `admin` |
+  | `active` | `boolean` | Không | `""` | Lọc theo trạng thái: `true` (hoạt động), `false` (khóa) |
+
+- **Request Body:** Không có.
+- **Responses:**
+
+#### `200 OK` - Lấy danh sách thành công
+```json
+{
+  "status": "success",
+  "data": {
+    "users": [
+      {
         "id": "e3a7b960-91a5-48b4-a698-32380598b981",
         "name": "Lucas Tran",
         "email": "lucas@example.com",
         "role": "customer",
-        "createdAt": "2026-09-28T07:35:00.000Z"
-      },
-      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-  }
-  ```
-
-### 4.2. Đăng nhập (`POST /users/login`)
-- **Body:**
-  ```json
-  {
-    "email": "lucas@example.com",
-    "password": "Password123"
-  }
-  ```
-- **Response Thành công (`200 OK`):**
-  ```json
-  {
-    "status": "success",
-    "message": "Đăng nhập thành công",
-    "data": {
-      "user": {
-        "id": "e3a7b960-91a5-48b4-a698-32380598b981",
-        "name": "Lucas Tran",
-        "email": "lucas@example.com",
-        "role": "customer",
-        "createdAt": "2026-09-28T07:35:00.000Z"
-      },
-      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-  }
-  ```
-
-### 4.3. Cấp mới Access Token (`POST /users/refresh-token` hoặc `/users/rf-token`)
-- **Body:**
-  ```json
-  {
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-  ```
-- **Response Thành công (`200 OK`):**
-  ```json
-  {
-    "status": "success",
-    "message": "Làm mới token thành công",
-    "data": {
-      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-  }
-  ```
-- **Response Phát hiện Tái sử dụng Token (`403 Forbidden`):**
-  ```json
-  {
-    "status": "error",
-    "message": "Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại."
-  }
-  ```
-
-### 4.4. Lấy thông tin cá nhân (`GET /users/me`)
-- **Headers:** `Authorization: Bearer <accessToken>`
-- **Response Thành công (`200 OK`):**
-  ```json
-  {
-    "status": "success",
-    "data": {
-      "user": {
-        "id": "e3a7b960-91a5-48b4-a698-32380598b981",
-        "name": "Lucas Tran",
-        "email": "lucas@example.com",
-        "role": "customer",
-        "phone": null,
-        "address": null,
-        "avatar": null,
+        "phone": "0987654321",
+        "address": "123 Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM",
+        "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde",
         "active": true,
-        "created_at": "2026-09-28T07:35:00.000Z",
-        "updated_at": "2026-09-28T07:35:00.000Z"
+        "created_at": "2026-10-10T13:45:00.000Z",
+        "updated_at": "2026-10-10T13:45:00.000Z"
       }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1
+  }
+}
+```
+
+#### `401 Unauthorized` - Chưa xác thực
+```json
+{
+  "status": "error",
+  "message": "Token xác thực không hợp lệ hoặc đã hết hạn"
+}
+```
+
+#### `403 Forbidden` - Không đủ quyền hạn
+```json
+{
+  "status": "error",
+  "message": "Bạn không có quyền truy cập tài nguyên này (yêu cầu vai trò: admin, manager)"
+}
+```
+
+---
+
+### 3.2. Lấy Chi Tiết Người Dùng Theo ID (Get User By ID)
+- **Mục đích:** Xem chi tiết hồ sơ của một tài khoản theo mã UUID.
+- **Method & Path:** `GET /api/v1/users/:id`
+- **Authentication/Authorization:** `Bearer Token` (`accessToken`). Người yêu cầu phải là **Chính chủ tài khoản** hoặc có vai trò `admin`, `manager`.
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Accept: application/json`
+- **URL Parameters:**
+  | Tên | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `id` | `UUID` | Có | Định danh duy nhất (UUID v4) của người dùng cần xem |
+
+- **Request Body:** Không có.
+- **Responses:**
+
+#### `200 OK` - Lấy thông tin thành công
+```json
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "e3a7b960-91a5-48b4-a698-32380598b981",
+      "name": "Lucas Tran",
+      "email": "lucas@example.com",
+      "role": "customer",
+      "phone": "0987654321",
+      "address": "123 Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM",
+      "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde",
+      "active": true,
+      "created_at": "2026-10-10T13:45:00.000Z",
+      "updated_at": "2026-10-10T13:45:00.000Z"
     }
   }
-  ```
+}
+```
 
-### 4.5. Đăng xuất (`POST /users/logout`)
-- **Headers:** `Authorization: Bearer <accessToken>`
-- **Response Thành công (`200 OK`):**
-  ```json
-  {
-    "status": "success",
-    "message": "Đăng xuất thành công"
+#### `403 Forbidden` - Không có quyền xem tài khoản của người khác
+```json
+{
+  "status": "error",
+  "message": "Bạn không có quyền xem thông tin của người dùng này"
+}
+```
+
+#### `404 Not Found` - Không tìm thấy ID
+```json
+{
+  "status": "error",
+  "message": "Không tìm thấy người dùng"
+}
+```
+
+---
+
+### 3.3. Tạo Người Dùng Mới Qua Quyền Quản Trị (Create User)
+- **Mục đích:** Quản trị viên chủ động tạo tài khoản cho nhân viên hoặc khách hàng với vai trò và trạng thái tùy chọn.
+- **Method & Path:** `POST /api/v1/users`
+- **Authentication/Authorization:** `Bearer Token` (`accessToken`). Yêu cầu vai trò: `admin`.
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Content-Type: application/json`
+  - `Accept: application/json`
+- **Parameters:** Không có.
+- **Request Body:**
+
+```json
+{
+  "name": "Trần Văn Quản Lý",
+  "email": "manager01@shop.vn",
+  "password": "ManagerPass123",
+  "role": "manager",
+  "phone": "0912345678",
+  "address": "456 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP.HCM",
+  "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb",
+  "active": true
+}
+```
+
+*Chú thích các trường:*
+- `name` *(string, bắt buộc)*: Họ và tên.
+- `email` *(string, bắt buộc)*: Email hợp lệ và duy nhất.
+- `password` *(string, tùy chọn)*: Mật khẩu khởi tạo (mặc định `'123456'` nếu bỏ trống).
+- `role` *(string, tùy chọn)*: Vai trò (`customer`, `manager`, `admin`, mặc định `'customer'`).
+- `phone` *(string, tùy chọn)*: Số điện thoại liên hệ.
+- `address` *(string, tùy chọn)*: Địa chỉ liên hệ.
+- `avatar` *(string, tùy chọn)*: Link ảnh đại diện.
+- `active` *(boolean, tùy chọn)*: Trạng thái kích hoạt (mặc định `true`).
+
+- **Responses:**
+
+#### `201 Created` - Tạo thành công
+```json
+{
+  "status": "success",
+  "message": "Tạo người dùng thành công",
+  "data": {
+    "user": {
+      "id": "c4d5e6f7-8901-2345-6789-abcdef012345",
+      "name": "Trần Văn Quản Lý",
+      "email": "manager01@shop.vn",
+      "role": "manager",
+      "phone": "0912345678",
+      "address": "456 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP.HCM",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb",
+      "active": true,
+      "created_at": "2026-10-10T14:00:00.000Z",
+      "updated_at": "2026-10-10T14:00:00.000Z"
+    }
   }
-  ```
+}
+```
+
+#### `400 Bad Request` - Dữ liệu không hợp lệ
+```json
+{
+  "status": "error",
+  "message": "Vui lòng cung cấp tên và email"
+}
+```
+*Hoặc:*
+```json
+{
+  "status": "error",
+  "message": "Email đã được sử dụng"
+}
+```
+
+#### `403 Forbidden` - Không phải Admin
+```json
+{
+  "status": "error",
+  "message": "Bạn không có quyền truy cập tài nguyên này (yêu cầu vai trò: admin)"
+}
+```
+
+---
+
+### 3.4. Cập Nhật Thông Tin Người Dùng (Update User)
+- **Mục đích:** Cập nhật thông tin hồ sơ người dùng. Người dùng tự sửa thông tin của mình hoặc Admin sửa thông tin của bất kỳ ai. Tự động áp dụng cơ chế chống leo thang quyền hạn và vô hiệu hóa phiên cũ nếu đổi mật khẩu.
+- **Method & Path:** `PUT /api/v1/users/:id`
+- **Authentication/Authorization:** `Bearer Token` (`accessToken`). Người yêu cầu phải là **Chính chủ tài khoản** hoặc có vai trò `admin`.
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Content-Type: application/json`
+  - `Accept: application/json`
+- **URL Parameters:**
+  | Tên | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `id` | `UUID` | Có | Định danh UUID của người dùng cần cập nhật |
+
+- **Request Body:**
+
+```json
+{
+  "name": "Lucas Tran Cập Nhật",
+  "phone": "0987654321",
+  "address": "789 Đường 3 Tháng 2, Quận 10, TP.HCM",
+  "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde",
+  "password": "NewSecretPassword456",
+  "role": "admin",
+  "active": true
+}
+```
+
+*Lưu ý bảo mật:* Nếu người gửi yêu cầu không phải `admin`, các trường `role` và `active` sẽ tự động bị lược bỏ nhằm chống tấn công leo thang quyền lực.
+
+- **Responses:**
+
+#### `200 OK` - Cập nhật thành công
+```json
+{
+  "status": "success",
+  "message": "Cập nhật thông tin người dùng thành công",
+  "data": {
+    "user": {
+      "id": "e3a7b960-91a5-48b4-a698-32380598b981",
+      "name": "Lucas Tran Cập Nhật",
+      "email": "lucas@example.com",
+      "role": "customer",
+      "phone": "0987654321",
+      "address": "789 Đường 3 Tháng 2, Quận 10, TP.HCM",
+      "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde",
+      "active": true,
+      "created_at": "2026-10-10T13:45:00.000Z",
+      "updated_at": "2026-10-10T14:15:00.000Z"
+    }
+  }
+}
+```
+
+#### `400 Bad Request` - Mật khẩu mới quá ngắn
+```json
+{
+  "status": "error",
+  "message": "Mật khẩu mới phải có ít nhất 6 ký tự"
+}
+```
+
+#### `403 Forbidden` - Sửa trái phép người dùng khác
+```json
+{
+  "status": "error",
+  "message": "Bạn không có quyền chỉnh sửa thông tin người dùng khác"
+}
+```
+
+#### `404 Not Found` - Không tìm thấy người dùng
+```json
+{
+  "status": "error",
+  "message": "Không tìm thấy người dùng để cập nhật"
+}
+```
+
+---
+
+### 3.5. Xóa Người Dùng (Delete User)
+- **Mục đích:** Xóa vĩnh viễn tài khoản người dùng khỏi hệ thống. Ngăn chặn quản trị viên tự xóa tài khoản của chính mình để tránh mất quyền quản trị.
+- **Method & Path:** `DELETE /api/v1/users/:id`
+- **Authentication/Authorization:** `Bearer Token` (`accessToken`). Yêu cầu vai trò: `admin`.
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Accept: application/json`
+- **URL Parameters:**
+  | Tên | Kiểu | Bắt buộc | Mô tả |
+  | :--- | :--- | :--- | :--- |
+  | `id` | `UUID` | Có | Định danh UUID của tài khoản cần xóa |
+
+- **Request Body:** Không có.
+- **Responses:**
+
+#### `200 OK` - Xóa thành công
+```json
+{
+  "status": "success",
+  "message": "Xóa người dùng thành công"
+}
+```
+
+#### `400 Bad Request` - Admin tự xóa chính mình
+```json
+{
+  "status": "error",
+  "message": "Không thể xóa tài khoản của chính bạn đang sử dụng"
+}
+```
+
+#### `403 Forbidden` - Không phải Admin
+```json
+{
+  "status": "error",
+  "message": "Bạn không có quyền truy cập tài nguyên này (yêu cầu vai trò: admin)"
+}
+```
+
+#### `404 Not Found` - Không tìm thấy tài khoản để xóa
+```json
+{
+  "status": "error",
+  "message": "Không tìm thấy người dùng để xóa"
+}
+```

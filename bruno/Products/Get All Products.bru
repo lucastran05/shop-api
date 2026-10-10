@@ -1,0 +1,31 @@
+meta {
+  name: Get All Products
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/products?page=1&limit=20&search=&category=&featured=&active=&minPrice=&maxPrice=&sort=newest
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 20
+  ~search: ban phim
+  ~category: Phụ kiện
+  ~featured: true
+  ~active: true
+  ~minPrice: 100000
+  ~maxPrice: 5000000
+  ~sort: newest
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.products).to.be.an("array");
+  });
+}

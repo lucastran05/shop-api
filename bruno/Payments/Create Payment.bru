@@ -1,0 +1,44 @@
+meta {
+  name: Create Payment
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/payments
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "order_id": "ORD-2026-001",
+    "amount": 2500000,
+    "payment_method": "bank",
+    "payment_type": "full",
+    "status": "pending",
+    "transaction_id": "TXN_VN_20261010_001",
+    "note": "Khách chuyển khoản ngân hàng Vietcombank",
+    "metadata": {
+      "bank_code": "VCB",
+      "account_number": "1012345678",
+      "account_holder": "LUCAS TRAN"
+    }
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.payment).to.have.property("id");
+  });
+}

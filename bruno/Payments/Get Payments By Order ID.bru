@@ -1,0 +1,27 @@
+meta {
+  name: Get Payments By Order ID
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/payments/order/{{orderId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  orderId: ORD-2026-001
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.payments).to.be.an("array");
+  });
+}

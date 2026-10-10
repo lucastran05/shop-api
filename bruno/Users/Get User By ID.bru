@@ -1,0 +1,27 @@
+meta {
+  name: Get User By ID
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/users/{{userId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  userId: 436218af-6b95-478a-b898-d7ba5d2ff119
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.user).to.have.property("id");
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Delete User (Admin)
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/users/{{userId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  userId: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().message).to.equal("Xóa người dùng thành công");
+  });
+}

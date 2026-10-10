@@ -1,0 +1,27 @@
+meta {
+  name: Get Payment By ID
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/payments/{{paymentId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  paymentId: 98f5a2b1-1234-4567-89ab-cdef01234567
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.payment).to.have.property("id");
+  });
+}

@@ -1,11 +1,11 @@
 meta {
-  name: Register User (UUID & rf_token)
+  name: Register User
   type: http
   seq: 1
 }
 
 post {
-  url: {{baseUrl}}/users/register
+  url: {{baseUrl}}/api/v1/users/register
   body: json
   auth: none
 }
@@ -26,11 +26,19 @@ script:post-response {
   if (res.getStatus() === 201 && res.getBody()?.data) {
     const data = res.getBody().data;
     if (data.accessToken) {
-      bru.setEnvVar("accessToken", data.accessToken);
       bru.setEnvVar("token", data.accessToken);
+      bru.setEnvVar("accessToken", data.accessToken);
     }
     if (data.refreshToken) {
       bru.setEnvVar("refreshToken", data.refreshToken);
     }
   }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.user).to.have.property("id");
+  });
 }

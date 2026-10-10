@@ -1,0 +1,23 @@
+meta {
+  name: Get Conversations
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/chat/conversations
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.conversations).to.be.an("array");
+  });
+}

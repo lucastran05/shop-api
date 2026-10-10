@@ -1,0 +1,42 @@
+meta {
+  name: Create Notification (Admin)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notifications
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "title": "Ưu Đãi Siêu Sale Cuối Tuần",
+    "message": "Giảm ngay 20% cho toàn bộ linh kiện máy tính khi thanh toán qua hình thức chuyển khoản!",
+    "type": "promotion",
+    "user_id": null,
+    "owner": "",
+    "key": "WEEKEND_PROMO_2026",
+    "params": {
+      "discountPercent": 20,
+      "event": "SuperWeekend"
+    }
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.notification).to.have.property("id");
+  });
+}

@@ -1,0 +1,63 @@
+meta {
+  name: Create Product
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/products
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Tai Nghe Chống Ồn Wireless Pro X",
+    "category": "Âm thanh",
+    "description": "Tai nghe over-ear cao cấp tích hợp chống ồn chủ động ANC thế hệ mới, pin lên đến 40 giờ.",
+    "price": 2500000,
+    "oldPrice": 3200000,
+    "stock": 50,
+    "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e",
+    "images": [
+      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e",
+      "https://images.unsplash.com/photo-1484704849700-f032a568e944"
+    ],
+    "variants": [
+      {
+        "color": "Midnight Black",
+        "sku": "ANC-BLK-01",
+        "price": 2500000
+      },
+      {
+        "color": "Silver White",
+        "sku": "ANC-SLV-02",
+        "price": 2600000
+      }
+    ],
+    "attributes": [
+      { "name": "Chuẩn kết nối", "value": "Bluetooth 5.3" },
+      { "name": "Bảo hành", "value": "24 tháng chính hãng" }
+    ],
+    "featured": true,
+    "active": true,
+    "deposit": true,
+    "depositRate": 25
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.product).to.have.property("id");
+  });
+}

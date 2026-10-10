@@ -1,0 +1,23 @@
+meta {
+  name: Reset Shop Info (Admin)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/shop/reset
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().message).to.equal("Khôi phục thông tin cửa hàng về mặc định thành công");
+  });
+}

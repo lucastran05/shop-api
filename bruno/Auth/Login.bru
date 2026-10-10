@@ -1,11 +1,11 @@
 meta {
-  name: Refresh Token (Lấy accessToken mới)
+  name: Login User
   type: http
-  seq: 3
+  seq: 2
 }
 
 post {
-  url: {{baseUrl}}/users/refresh-token
+  url: {{baseUrl}}/api/v1/users/login
   body: json
   auth: none
 }
@@ -16,7 +16,8 @@ headers {
 
 body:json {
   {
-    "refreshToken": "{{refreshToken}}"
+    "email": "lucas@example.com",
+    "password": "Password123"
   }
 }
 
@@ -24,11 +25,19 @@ script:post-response {
   if (res.getStatus() === 200 && res.getBody()?.data) {
     const data = res.getBody().data;
     if (data.accessToken) {
-      bru.setEnvVar("accessToken", data.accessToken);
       bru.setEnvVar("token", data.accessToken);
+      bru.setEnvVar("accessToken", data.accessToken);
     }
     if (data.refreshToken) {
       bru.setEnvVar("refreshToken", data.refreshToken);
     }
   }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("accessToken");
+  });
 }

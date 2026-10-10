@@ -1,0 +1,33 @@
+meta {
+  name: Get All Payments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/payments?page=1&limit=20&order_id=&user_id=&status=&payment_method=&payment_type=
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 20
+  ~order_id: ORD-2026-001
+  ~user_id: 436218af-6b95-478a-b898-d7ba5d2ff119
+  ~status: completed
+  ~payment_method: bank
+  ~payment_type: full
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.payments).to.be.an("array");
+  });
+}

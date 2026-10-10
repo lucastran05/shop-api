@@ -1,0 +1,27 @@
+meta {
+  name: Delete Message
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/chat/messages/{{messageId}}
+  body: none
+  auth: bearer
+}
+
+params:path {
+  messageId: e2a1b0c9-8765-4321-fedc-ba9876543210
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().message).to.equal("Xóa tin nhắn thành công");
+  });
+}

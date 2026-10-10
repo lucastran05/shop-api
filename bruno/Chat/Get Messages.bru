@@ -1,0 +1,31 @@
+meta {
+  name: Get Messages
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/chat/messages?owner=&conversation_id=&page=1&limit=50&unread_only=false
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 50
+  unread_only: false
+  ~owner: lucas@example.com
+  ~conversation_id: lucas@example.com
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.messages).to.be.an("array");
+  });
+}

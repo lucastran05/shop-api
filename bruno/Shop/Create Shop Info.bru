@@ -1,0 +1,48 @@
+meta {
+  name: Create Shop Info (Admin)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/shop
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "ABC Shop Vietnam",
+    "description": "Cửa hàng phụ kiện & máy tính chính hãng",
+    "phone": "0901234567",
+    "email": "contact@abcshop.vn",
+    "address": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+    "mapUrl": "https://maps.google.com",
+    "logoUrl": "https://example.com/logo.png",
+    "bannerUrl": "https://example.com/banner.png",
+    "socialLinks": [
+      { "platform": "facebook", "url": "https://facebook.com/abcshop" }
+    ],
+    "commerce": {
+      "freeShippingFrom": 500000,
+      "shippingFee": 30000,
+      "depositRate": 0.2
+    }
+  }
+}
+
+tests {
+  test("Status code is 201 Created or 200 OK", function() {
+    expect([200, 201]).to.include(res.getStatus());
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.shop).to.have.property("id");
+  });
+}

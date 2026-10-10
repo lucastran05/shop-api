@@ -1,0 +1,34 @@
+meta {
+  name: Send Message
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/chat/messages
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "message": "Xin chào shop, sản phẩm này còn màu trắng và có sẵn hàng tại chi nhánh HCM không ạ?",
+    "conversation_id": "lucas@example.com"
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.message).to.have.property("id");
+  });
+}

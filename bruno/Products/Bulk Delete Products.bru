@@ -1,0 +1,36 @@
+meta {
+  name: Bulk Delete Products
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/products/bulk-delete
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ids": [
+      "b3e34bcf-697b-402a-a9a3-55913e7ce001",
+      "b3e34bcf-697b-402a-a9a3-55913e7ce002"
+    ]
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("deletedCount");
+  });
+}
