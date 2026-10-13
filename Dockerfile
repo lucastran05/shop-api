@@ -30,11 +30,9 @@ FROM dependencies AS development
 
 ENV NODE_ENV=development
 
-# Copy toàn bộ mã nguồn
+# Copy toàn bộ mã nguồn và đảm bảo file .env mặc định luôn tồn tại
 COPY . .
-
-# Gán quyền sở hữu thư mục cho non-root user 'node'
-RUN chown -R node:node /app
+RUN (cp -n .env.example .env 2>/dev/null || touch .env) && chown -R node:node /app
 
 USER node
 
