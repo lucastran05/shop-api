@@ -1,0 +1,34 @@
+meta {
+  name: CHAT03 - Send Message Customer
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/conversations/{{conversationId}}/messages
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "content": "Dạ shop ơi, đơn hàng này bao lâu thì giao tới Hà Nội ạ?",
+    "client_message_id": "client_msg_001"
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.sender_role).to.equal("customer");
+  });
+}

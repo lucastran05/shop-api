@@ -1,11 +1,10 @@
 import AuthService from '../services/auth.service.js';
-import UserModel from '../models/user.model.js';
 
 class AuthController {
-  // POST /register
+  // POST /api/v1/auth/register & /api/v1/users/register (AUTH01)
   static async register(req, res, next) {
     try {
-      const { name, email, password } = req.body;
+      const { name, email, password, password_confirmation } = req.body;
 
       if (!name || !email || !password) {
         return res.status(400).json({
@@ -21,19 +20,36 @@ class AuthController {
         });
       }
 
+      if (password_confirmation && password !== password_confirmation) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Xác nhận mật khẩu không khớp',
+        });
+      }
+
       const result = await AuthService.register({ name, email, password });
 
       return res.status(201).json({
         status: 'success',
         message: 'Đăng ký tài khoản thành công',
-        data: result,
+        data: {
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: result.user.role,
+          is_active: true,
+          created_at: result.user.createdAt,
+          user: result.user,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /login
+  // POST /api/v1/auth/login & /api/v1/users/login (AUTH02)
   static async login(req, res, next) {
     try {
       const { email, password } = req.body;
@@ -46,11 +62,25 @@ class AuthController {
       }
 
       const result = await AuthService.login({ email, password });
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
       return res.status(200).json({
         status: 'success',
         message: 'Đăng nhập thành công',
-        data: result,
+        data: {
+          user: {
+            id: result.user.id,
+            name: result.user.name,
+            email: result.user.email,
+            phone: result.user.phone || null,
+            role: result.user.role,
+            is_active: result.user.active !== false,
+            default_address_id: result.user.default_address_id || null,
+          },
+          expires_at: expiresAt,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        },
       });
     } catch (error) {
       next(error);
@@ -60,7 +90,6 @@ class AuthController {
   // POST /refresh-token (hoặc /rf-token)
   static async refreshToken(req, res, next) {
     try {
-      // Hỗ trợ cả 2 định dạng field: refreshToken hoặc rf_token
       const token = req.body?.refreshToken || req.body?.rf_token;
 
       if (!token) {
@@ -82,7 +111,7 @@ class AuthController {
     }
   }
 
-  // POST /logout
+  // POST /api/v1/auth/logout & /api/v1/users/logout (AUTH03)
   static async logout(req, res, next) {
     try {
       await AuthService.logout(req.user.id);
@@ -90,35 +119,62 @@ class AuthController {
       return res.status(200).json({
         status: 'success',
         message: 'Đăng xuất thành công',
+        data: {
+          success: true,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /me
+  // GET /api/v1/me & /api/v1/users/me (AUTH04)
   static async getMe(req, res, next) {
     try {
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        return res.status(404).json({
-          status: 'error',
-          message: 'Không tìm thấy người dùng',
-        });
-      }
-
-      if (user.active === false) {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa',
-        });
-      }
+      const user = await AuthService.getMe(req.user.id);
 
       return res.status(200).json({
         status: 'success',
         data: {
+          ...user,
           user,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/v1/me (AUTH05)
+  static async updateMe(req, res, next) {
+    try {
+      const { name, phone } = req.body;
+      const updatedUser = await AuthService.updateMe(req.user.id, { name, phone });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Cập nhật thông tin thành công',
+        data: updatedUser,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/v1/me/password (AUTH06)
+  static async updatePassword(req, res, next) {
+    try {
+      const { current_password, new_password, new_password_confirmation } = req.body;
+      const result = await AuthService.changePassword(req.user.id, {
+        current_password,
+        new_password,
+        new_password_confirmation,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Đổi mật khẩu thành công',
+        data: result,
       });
     } catch (error) {
       next(error);

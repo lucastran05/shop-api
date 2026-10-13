@@ -5,10 +5,24 @@ dotenv.config();
 
 const { Pool } = pkg;
 
+// Phát hiện môi trường test để tối ưu thời gian chờ giải phóng kết nối
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  process.execArgv.includes('--test') ||
+  process.argv.some((arg) => typeof arg === 'string' && (arg.includes('--test') || arg.includes('.test.js')));
+
+// Cấu hình tối ưu Connection Pool cho PostgreSQL
+const poolConfig = {
+  max: Number(process.env.DB_POOL_MAX) || 20,
+  idleTimeoutMillis: isTestEnv ? 500 : (Number(process.env.DB_IDLE_TIMEOUT_MS) || 30000),
+  connectionTimeoutMillis: Number(process.env.DB_CONN_TIMEOUT_MS) || 5000,
+};
+
 // Khởi tạo Pool kết nối tới PostgreSQL
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
+      ...poolConfig,
     })
   : new Pool({
       host: process.env.DB_HOST || 'localhost',
@@ -16,6 +30,7 @@ const pool = process.env.DATABASE_URL
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
       database: process.env.DB_NAME || 'shop_db',
+      ...poolConfig,
     });
 
 // Hàm kiểm tra kết nối và khởi tạo bảng users với UUID & rf_token
@@ -175,7 +190,213 @@ export const initDB = async () => {
     `;
     await client.query(createNotificationsTableQuery);
 
-    console.log('✅ Hệ thống bảng (users, products, payments, chat, shop, notifications) đã sẵn sàng.');
+    // 7. Bảng danh mục sản phẩm (categories)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 8. Bảng địa chỉ người dùng (user_addresses)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_addresses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        recipient_name VARCHAR(255) NOT NULL,
+        recipient_phone VARCHAR(50) NOT NULL,
+        province_code VARCHAR(50) NOT NULL,
+        province_name VARCHAR(255) NOT NULL,
+        ward_code VARCHAR(50) NOT NULL,
+        ward_name VARCHAR(255) NOT NULL,
+        street_address TEXT NOT NULL,
+        full_address TEXT,
+        is_default BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_addresses_user_id ON user_addresses(user_id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS default_address_id UUID;
+    `);
+
+    // Cập nhật các cột bổ sung cho products nếu chưa có
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_deposit BOOLEAN DEFAULT FALSE;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS deposit_rate NUMERIC(5, 2) DEFAULT 20;
+    `);
+
+    // 9. Bảng đánh giá sản phẩm (reviews)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        content TEXT,
+        images JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
+    `);
+
+    // 10. Bảng upload file (uploads)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS uploads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        url TEXT NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(100),
+        size_bytes BIGINT,
+        purpose VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 11. Bảng giỏ hàng (carts & cart_items)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS carts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS cart_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        cart_id UUID REFERENCES carts(id) ON DELETE CASCADE,
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+        variant_id VARCHAR(100) NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items(cart_id);
+    `);
+
+    // 12. Bảng đơn hàng (orders & order_items)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(50) UNIQUE NOT NULL,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'pending',
+        status_label VARCHAR(100) DEFAULT 'Chờ xác nhận',
+        payment_status VARCHAR(50) NOT NULL DEFAULT 'unpaid',
+        deposit_status VARCHAR(50) NOT NULL DEFAULT 'none',
+        deposit_paid_at TIMESTAMP WITH TIME ZONE,
+        payment_method VARCHAR(50) DEFAULT 'cod',
+        payment_mode VARCHAR(50) DEFAULT 'full',
+        delivery_method VARCHAR(50) DEFAULT 'standard',
+        subtotal NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        shipping_fee NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        discount_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        total_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        deposit_rate NUMERIC(5, 2) DEFAULT 0,
+        deposit_amount NUMERIC(15, 2) DEFAULT 0,
+        amount_due_now NUMERIC(15, 2) DEFAULT 0,
+        paid_amount NUMERIC(15, 2) DEFAULT 0,
+        refunded_amount NUMERIC(15, 2) DEFAULT 0,
+        held_amount NUMERIC(15, 2) DEFAULT 0,
+        remaining_amount NUMERIC(15, 2) DEFAULT 0,
+        currency VARCHAR(10) DEFAULT 'VND',
+        recipient JSONB DEFAULT '{}'::jsonb,
+        shipment JSONB DEFAULT '{}'::jsonb,
+        history JSONB DEFAULT '[]'::jsonb,
+        note TEXT,
+        coupon JSONB DEFAULT '{}'::jsonb,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_code ON orders(code);
+      CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+      CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+
+      CREATE TABLE IF NOT EXISTS order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+        variant_id VARCHAR(100),
+        product_name VARCHAR(255) NOT NULL,
+        variant_label VARCHAR(255),
+        color VARCHAR(100),
+        image_url TEXT,
+        unit_price NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        line_total NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+    `);
+
+    // 13. Bảng điều chỉnh kho (inventory_adjustments)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS inventory_adjustments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+        variant_id VARCHAR(100),
+        delta INTEGER NOT NULL,
+        stock_before INTEGER NOT NULL,
+        stock_after INTEGER NOT NULL,
+        reason TEXT,
+        actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_product_id ON inventory_adjustments(product_id);
+    `);
+
+    // 14. Bảng phiên thanh toán (payment_sessions) & xác nhận thu tiền / hoàn tiền
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payment_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        purpose VARCHAR(50) DEFAULT 'full',
+        method VARCHAR(50) DEFAULT 'qr',
+        provider VARCHAR(50) DEFAULT 'vietqr',
+        status VARCHAR(50) DEFAULT 'pending',
+        amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        currency VARCHAR(10) DEFAULT 'VND',
+        qr_payload TEXT,
+        qr_image_url TEXT,
+        payment_url TEXT,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        paid_at TIMESTAMP WITH TIME ZONE,
+        failure_code VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_sessions_order_id ON payment_sessions(order_id);
+
+      CREATE TABLE IF NOT EXISTS payment_confirmations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        kind VARCHAR(50) NOT NULL,
+        amount NUMERIC(15, 2) NOT NULL,
+        transaction_reference VARCHAR(100),
+        status VARCHAR(50) DEFAULT 'confirmed',
+        note TEXT,
+        confirmed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        confirmed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS refunds (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        amount NUMERIC(15, 2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'completed',
+        reason TEXT,
+        transaction_reference VARCHAR(100),
+        requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('✅ Hệ thống bảng (users, products, categories, orders, carts, payments, chat, shop, notifications) đã sẵn sàng.');
 
     client.release();
   } catch (error) {

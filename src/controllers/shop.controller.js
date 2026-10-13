@@ -1,21 +1,50 @@
 import ShopService from '../services/shop.service.js';
 
 class ShopController {
-  // GET /api/v1/shop
+  // GET /api/v1/shop (SHOP01)
   static async get(req, res, next) {
     try {
       const shop = await ShopService.getShopInfo();
 
       return res.status(200).json({
         status: 'success',
-        data: { shop },
+        data: {
+          id: shop.id,
+          name: shop.name,
+          description: shop.description,
+          business_mode: shop.business_mode || 'online_and_store',
+          contact: shop.contact,
+          updated_at: shop.updated_at || shop.updatedAt,
+          shop,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // PUT /api/v1/shop
+  // GET /admin/settings/shop (SET01)
+  static async getAdminSettings(req, res, next) {
+    try {
+      const shop = await ShopService.getShopInfo();
+
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          id: shop.id,
+          name: shop.name,
+          description: shop.description,
+          business_mode: shop.business_mode || 'online_and_store',
+          contact: shop.contact,
+          updated_at: shop.updated_at || shop.updatedAt,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /admin/settings/shop & PUT /api/v1/shop (SET02)
   static async update(req, res, next) {
     try {
       const shop = await ShopService.updateShopInfo(req.body);
@@ -23,7 +52,15 @@ class ShopController {
       return res.status(200).json({
         status: 'success',
         message: 'Cập nhật thông tin cửa hàng thành công',
-        data: { shop },
+        data: {
+          id: shop.id,
+          name: shop.name,
+          description: shop.description,
+          business_mode: shop.business_mode || 'online_and_store',
+          contact: shop.contact,
+          updated_at: shop.updated_at || shop.updatedAt,
+          shop,
+        },
       });
     } catch (error) {
       next(error);
@@ -45,7 +82,7 @@ class ShopController {
     }
   }
 
-  // POST /api/v1/shop/reset (hoặc DELETE /api/v1/shop/reset)
+  // POST /api/v1/shop/reset
   static async reset(req, res, next) {
     try {
       const shop = await ShopService.resetShopInfo();

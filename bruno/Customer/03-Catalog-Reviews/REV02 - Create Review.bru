@@ -1,0 +1,34 @@
+meta {
+  name: REV02 - Create Review
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/products/{{productId}}/reviews
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "rating": 5,
+    "content": "Sản phẩm dùng rất tốt, âm thanh rõ nét và bass đầm!"
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.rating).to.equal(5);
+  });
+}

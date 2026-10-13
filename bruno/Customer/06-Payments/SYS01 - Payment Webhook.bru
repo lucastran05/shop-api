@@ -1,0 +1,31 @@
+meta {
+  name: SYS01 - Payment Webhook
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/payments/webhooks/vnpay
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "order_id": "{{orderId}}",
+    "amount": 500000,
+    "transaction_id": "VNPAY_TEST_998877",
+    "vnp_ResponseCode": "00"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+  });
+}

@@ -1,0 +1,33 @@
+meta {
+  name: ADC03 - Update Category Admin
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/admin/categories/{{categoryId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Gaming Gear & Phụ Kiện"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.name).to.equal("Gaming Gear & Phụ Kiện");
+  });
+}

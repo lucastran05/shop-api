@@ -1,0 +1,24 @@
+meta {
+  name: REV01 - Get Product Reviews
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/products/{{productId}}/reviews?page=1&limit=10
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 10
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody()).to.have.property("summary");
+  });
+}

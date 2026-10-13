@@ -1,0 +1,36 @@
+meta {
+  name: CAT01 - Get Products Customer
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/products?in_stock=true&sort=newest&page=1&limit=20
+  body: none
+  auth: none
+}
+
+params:query {
+  in_stock: true
+  sort: newest
+  page: 1
+  limit: 20
+  ~keyword: tai nghe
+  ~min_price: 100000
+  ~max_price: 5000000
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && Array.isArray(res.getBody()?.data) && res.getBody().data.length > 0) {
+    bru.setEnvVar("productId", res.getBody().data[0].id);
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+    expect(res.getBody()).to.have.property("pagination");
+  });
+}

@@ -7,11 +7,15 @@ const router = Router();
 // Toàn bộ chức năng thông báo yêu cầu người dùng đăng nhập
 router.use(verifyAuth);
 
-// Đánh dấu tất cả thông báo là đã đọc (phải đặt trước /:id)
+// NOT03: Đánh dấu tất cả thông báo là đã đọc (hỗ trợ cả POST /read-all và PATCH /mark-all-read)
+router.post('/read-all', NotificationController.markAllAsRead);
 router.patch('/mark-all-read', NotificationController.markAllAsRead);
 
 // Xóa tất cả các thông báo đã đọc (phải đặt trước /:id)
 router.delete('/clear-read', NotificationController.clearRead);
+
+// NOT02: Đánh dấu 1 thông báo là đã đọc theo hợp đồng /:notification_id/read
+router.patch('/:notification_id/read', NotificationController.markAsRead);
 
 // Lấy danh sách thông báo (người dùng thường chỉ thấy thông báo của mình, admin có thể xem tất cả)
 router.get('/', NotificationController.getAll);

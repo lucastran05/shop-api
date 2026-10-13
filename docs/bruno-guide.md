@@ -1,123 +1,78 @@
-# Hướng Dẫn Sử Dụng Bruno HTTP Collection Để Kiểm Thử API
+# Hướng Dẫn Sử Dụng Bruno HTTP Collection Cho ABC Shop API
 
-[Bruno](https://www.usebruno.com/) là ứng dụng HTTP Client mã nguồn mở gọn nhẹ, lưu trữ các API request dưới dạng các file văn bản thô `.bru` trực tiếp trong repository.
+[Bruno](https://www.usebruno.com/) là ứng dụng HTTP Client mã nguồn mở gọn nhẹ, lưu trữ toàn bộ các API request dưới dạng các file văn bản thô `.bru` trực tiếp trong repository.
 
-Bộ sưu tập **Shop API Bruno Collection** đã được cấu hình hoàn chỉnh với đầy đủ 39 request theo cấu trúc chuẩn, hỗ trợ tự động lưu token qua script và kiểm tra assert status code.
+Bộ sưu tập **Shop API Bruno Collection** (`shop-api/bruno/`) đã được hoàn thiện với cấu trúc chuẩn theo hợp đồng đặc tả `Danh_sach_API_ABC_Shop.md`:
+- Hỗ trợ đầy đủ luồng nghiệp vụ **Khách hàng (`/api/v1/...`)** và **Quản trị viên (`/admin/...`)**.
+- Tích hợp sẵn `script:post-response` tự động lưu token, id sản phẩm, đơn hàng, giỏ hàng, phiên thanh toán vào biến môi trường.
+- Tích hợp sẵn khối `tests` kiểm tra status code và schema JSON.
 
 ---
 
-## 1. Mở Collection Trong Ứng Dụng Bruno
+## 1. Mở Collection Trong Bruno
 
-1. Tải và cài đặt ứng dụng [Bruno Desktop](https://www.usebruno.com/downloads) (hỗ trợ Windows, macOS, Linux).
-2. Mở ứng dụng **Bruno**.
+1. Tải và cài đặt ứng dụng [Bruno Desktop](https://www.usebruno.com/downloads) (Windows, macOS, Linux).
+2. Khởi chạy **Bruno**.
 3. Chọn tính năng **Open Collection**.
-4. Chọn đường dẫn tới thư mục `bruno/` trong thư mục gốc dự án `shop-api`:
+4. Chọn đường dẫn tới thư mục `bruno/` trong dự án `shop-api`:
    ```text
    shop-api/bruno/
    ```
-5. Collection **Shop API** sẽ xuất hiện trên thanh điều hướng bên trái với cấu trúc thư mục phân tách theo từng domain:
-   - 📁 **Auth** (5 requests)
-   - 📁 **Users** (5 requests)
-   - 📁 **Products** (7 requests)
-   - 📁 **Payments** (7 requests)
-   - 📁 **Chat** (8 requests)
-   - 📁 **Shop** (4 requests)
-   - 📁 **Notifications** (7 requests)
-   - 📄 **Health Check** (1 request)
+5. Collection **Shop API** sẽ xuất hiện trên thanh điều hướng bên trái với cấu trúc thư mục rõ ràng:
+
+### 📁 Nhánh Khách hàng (`Customer/`):
+- `01-Auth`: `AUTH01 - Register Customer`, `AUTH02 - Login Customer`, `AUTH03 - Logout Customer`.
+- `02-Profile-Addresses`: `AUTH04 - Get Profile Me`, `AUTH05 - Update Profile Me`, `AUTH06 - Update Password Me`, `ADR01` đến `ADR07` (Quản lý địa chỉ giao hàng và danh sách tỉnh/xã).
+- `03-Catalog-Reviews`: `CAT01` (Danh sách sản phẩm), `CAT02` (Chi tiết), `CAT03` (Danh mục), `REV01 - REV03` (Đánh giá và upload ảnh).
+- `04-Cart`: `CART01` (Xem giỏ), `CART02` (Thêm món).
+- `05-Checkout-Orders`: `CHK01` (Báo giá và cọc), `CHK02` (Tạo đơn hàng), `ORD01 - ORD03` (Lịch sử đơn, chi tiết, hủy đơn).
+- `06-Payments`: `PAY01` (Tạo phiên VietQR), `PAY02` (Theo dõi thanh toán), `SYS01` (Webhook cổng thanh toán).
+- `07-Chat`: `CHAT01` (Mở chat), `CHAT02` (Lịch sử tin nhắn), `CHAT03` (Gửi tin nhắn).
+- `08-Notifications`: `NOT01` (Danh sách thông báo), `NOT02` (Đánh dấu 1 tin đã đọc), `NOT03` (Đọc tất cả).
+- `09-Shop`: `SHOP01` (Thông tin liên hệ, hình thức shop).
+
+### 📁 Nhánh Quản trị viên (`Admin/`):
+- `01-Dashboard-Reports`: `DSH01` (Số liệu tổng quan, doanh thu, đơn gần đây), `REP01` (Báo cáo bán hàng theo tháng/năm).
+- `02-Products`: `ADP01` (Danh sách quản trị), `ADP02` (Chi tiết), `ADP03` (Thêm sản phẩm kèm biến thể & cọc), `ADP04` (Sửa/ghim), `ADP05 - ADP06` (Xóa đơn/xóa nhiều).
+- `03-Categories`: `ADC01 - ADC05` (Danh mục, thêm mới, sửa tên, xóa nhiều).
+- `04-Inventory`: `INV01` (Tồn kho theo biến thể), `INV02` (Điều chỉnh tồn thủ công), `INV03` (Lịch sử điều chỉnh).
+- `05-Orders-Payments`: `ADO01 - ADO03` (Tìm kiếm, xem chi tiết, đổi trạng thái và mã vận đơn), `ADY01 - ADY02` (Xác nhận cọc/thu đủ và hoàn tiền).
+- `06-Chat`: `ADM01 - ADM03` (Danh sách khách hàng chat, nạp tin nhắn, nhân viên trả lời).
+- `07-Settings`: `SET01 - SET02` (Xem và lưu cấu hình shop).
+- `08-Users`: `USR01 - USR05` (Quản trị viên quản lý danh sách, tạo tài khoản, đổi vai trò, khóa và xóa tài khoản - bảo vệ tài khoản admin không bị xóa).
 
 ---
 
-## 2. Cấu Hình Môi Trường (Environment Variables)
+## 2. Cấu Hình Biến Môi Trường (`Local.bru`)
 
-1. Ở góc trên cùng bên phải giao diện Bruno, mở danh sách thả xuống chọn Environment.
-2. Chọn môi trường **`Local`** (được định nghĩa trong `bruno/environments/Local.bru`).
-3. Các biến môi trường cốt lõi bao gồm:
-   - `baseUrl`: Host chạy server backend (`http://localhost:5000`).
-   - `token`: Bearer Access Token hiện tại dùng cho header xác thực `auth:bearer`.
-   - `accessToken`: Đồng bộ giá trị với `token`.
-   - `refreshToken`: Refresh Token dùng cho endpoint xoay vòng token (`/users/refresh-token`).
+Trong góc trên cùng bên phải Bruno, chọn môi trường **`Local`** (`bruno/environments/Local.bru`).
 
-> [!TIP]
-> **Cơ chế tự động lưu Token:** Khi bạn thực hiện gửi request **Register User** hoặc **Login User**, Bruno sẽ tự động chạy script `post-response` để bóc tách `accessToken` và `refreshToken` từ response và ghi đè vào biến môi trường `token`, `accessToken`, `refreshToken`. Bạn không cần copy-paste token thủ công!
+Các biến môi trường chính:
+- `baseUrl`: `http://localhost:5000` (hoặc cổng mà server đang chạy).
+- `token` / `accessToken`: Access Token hiện tại của tài khoản khách hàng.
+- `adminToken`: Access Token của tài khoản có vai trò `admin` hoặc `manager`.
+- `productId`, `orderId`, `quoteId`, `addressId`, `conversationId`, `userId`: Tự động được bắt và lưu khi gửi các request tạo dữ liệu.
 
 ---
 
-## 3. Quy Trình Kiểm Thử Đề Xuất (Testing Workflow)
+## 3. Quy Trình Kiểm Thử Đề Xuất (End-to-End Workflow)
 
-### Bước 1: Kiểm tra trạng thái máy chủ (Health Check)
-- Mở file: `Health Check`
-- Bấm **Send**
-- Kết quả mong muốn: `HTTP 200 OK`, `status: "success"`, server đang hoạt động bình thường.
-
-### Bước 2: Xác thực & Đăng nhập (Folder `Auth`)
-1. **Đăng ký tài khoản:** Mở `Auth / Register User`, bấm **Send** -> `HTTP 201 Created`. Nhận `id` UUID và tự động lưu `token`.
-2. **Đăng nhập:** Mở `Auth / Login User`, bấm **Send** -> `HTTP 200 OK`. Cập nhật `token` mới.
-3. **Lấy hồ sơ cá nhân:** Mở `Auth / Get Current User (Me)`, bấm **Send** -> `HTTP 200 OK`, xem thông tin user tương ứng với `{{token}}`.
-4. **Làm mới Token (RTR):** Mở `Auth / Refresh Token`, bấm **Send** -> `HTTP 200 OK`, cặp token được làm mới và tự động cập nhật vào biến môi trường.
-
-### Bước 3: Quản lý người dùng (Folder `Users`)
-1. **Danh sách người dùng:** Mở `Users / Get All Users` (yêu cầu token quyền `admin` hoặc `manager`).
-2. **Tạo tài khoản quản trị:** Mở `Users / Create User (Admin)` để tạo nhân viên CSKH hoặc quản lý kho.
-3. **Cập nhật người dùng:** Mở `Users / Update User` để kiểm tra cơ chế cập nhật thông tin và chặn leo thang vai trò.
-
-### Bước 4: Kiểm thử sản phẩm & kho hàng (Folder `Products`)
-1. **Xem danh mục:** Mở `Products / Get Product Categories` -> `HTTP 200 OK` (Public).
-2. **Tìm kiếm & lọc:** Mở `Products / Get All Products`, thử nghiệm các param `category`, `minPrice`, `maxPrice`, `sort`.
-3. **Thêm sản phẩm mới:** Mở `Products / Create Product` -> `HTTP 201 Created`.
-4. **Cập nhật & Xóa:** Thử nghiệm `Products / Update Product` và `Products / Bulk Delete Products`.
-
-### Bước 5: Kiểm thử thanh toán (Folder `Payments`)
-1. **Tạo giao dịch:** Mở `Payments / Create Payment` với mã đơn hàng `ORD-2026-001`.
-2. **Tra cứu theo đơn hàng:** Mở `Payments / Get Payments By Order ID`.
-3. **Cập nhật trạng thái:** Mở `Payments / Update Payment Status` để chuyển sang `completed`.
-
-### Bước 6: Kiểm thử tin nhắn & chăm sóc khách hàng (Folder `Chat`)
-1. **Gửi tin nhắn:** Mở `Chat / Send Message` (khách hàng nhắn cho shop).
-2. **Xem hội thoại:** Mở `Chat / Get Conversations` (nhân viên xem tổng hợp các khách hàng).
-3. **Đánh dấu đã đọc:** Mở `Chat / Mark Message As Read` hoặc `Chat / Mark All Messages As Read`.
-
-### Bước 7: Cấu hình shop & Thông báo (Folders `Shop` & `Notifications`)
-1. **Xem thông tin shop:** Mở `Shop / Get Shop Info` (Public).
-2. **Phát thông báo:** Mở `Notifications / Create Notification (Admin)` để phát thông báo khuyến mãi.
-3. **Khách hàng nhận thông báo:** Mở `Notifications / Get All Notifications` và `Notifications / Mark All Notifications As Read`.
-
----
-
-## 4. Cú Pháp Chuẩn Của File `.bru` Trong Bộ Sưu Tập
-
-Tất cả các file đều tuân thủ chặt chẽ cú pháp của Bruno v1:
-
-```bru
-meta {
-  name: Tên Endpoint
-  type: http
-  seq: 1
-}
-
-post {
-  url: {{baseUrl}}/api/v1/resource/path
-  body: json
-  auth: bearer
-}
-
-headers {
-  Content-Type: application/json
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "key": "value"
-  }
-}
-
-tests {
-  test("Status code is 200 OK", function() {
-    expect(res.getStatus()).to.equal(200);
-    expect(res.getBody().status).to.equal("success");
-  });
-}
-```
+1. **Khởi động server:**
+   ```bash
+   npm run dev
+   ```
+2. **Khách hàng đăng ký & đăng nhập:**
+   - Mở `Customer / 01-Auth / AUTH01 - Register Customer` -> Bấm **Send** -> Nhận `201 Created` (Token tự động gán vào biến môi trường).
+   - Mở `Customer / 02-Profile-Addresses / ADR02 - Create Customer Address` -> Bấm **Send** -> Nhận `201 Created` (Lưu `addressId`).
+3. **Xem sản phẩm & đặt hàng:**
+   - Mở `Customer / 03-Catalog-Reviews / CAT01 - Get Products Customer` -> Bấm **Send** (Lưu `productId`).
+   - Mở `Customer / 04-Cart / CART02 - Add Item To Cart` -> Bấm **Send** -> Nhận `200 OK`.
+   - Mở `Customer / 05-Checkout-Orders / CHK01 - Calculate Quote` -> Bấm **Send** -> Nhận báo giá kèm tiền cọc (Lưu `quoteId`).
+   - Mở `Customer / 05-Checkout-Orders / CHK02 - Create Order` -> Bấm **Send** -> Tạo đơn hàng thành công (Lưu `orderId`).
+4. **Thanh toán & Cọc:**
+   - Mở `Customer / 06-Payments / PAY01 - Create Payment Session` -> Bấm **Send** -> Nhận link QR VietQR thanh toán cọc.
+5. **Quản trị viên xử lý đơn & kho:**
+   - Đăng nhập tài khoản admin để lấy `adminToken`.
+   - Mở `Admin / 05-Orders-Payments / ADY01 - Confirm Payment Admin` -> Bấm **Send** -> Trạng thái cọc chuyển sang `paid`.
+   - Mở `Admin / 05-Orders-Payments / ADO03 - Update Admin Order Status` -> Bấm **Send** -> Cập nhật trạng thái `processing`, đơn vị giao vận và mã tracking.
+   - Mở `Admin / 01-Dashboard-Reports / DSH01 - Get Dashboard Summary` -> Bấm **Send** -> Xem doanh thu và số lượng đơn hàng cập nhật thời gian thực.

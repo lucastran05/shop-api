@@ -1,0 +1,35 @@
+meta {
+  name: ADC05 - Bulk Delete Categories
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/admin/categories/bulk-delete
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ids": [
+      "{{categoryId}}"
+    ]
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("deleted_ids");
+  });
+}

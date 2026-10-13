@@ -1,0 +1,42 @@
+meta {
+  name: CHK01 - Calculate Quote
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/checkout/quote
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "delivery_method": "standard",
+    "deposit_rate": 20,
+    "coupon_code": "GIAM10"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody()?.data?.quote_id) {
+    bru.setEnvVar("quoteId", res.getBody().data.quote_id);
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("quote_id");
+    expect(res.getBody().data).to.have.property("deposit_amount");
+  });
+}

@@ -1,126 +1,401 @@
-import ProductService from '../services/product.service.js';
+import catalogRepository from '../modules/catalog/catalog.repository.js';
+import inventoryRepository from '../modules/storefront/inventory.repository.js';
 
 class ProductController {
-  // GET /api/v1/products
+  // GET /api/v1/products (CAT01)
   static async getAll(req, res, next) {
     try {
       const {
+        keyword,
+        search,
+        category_id,
+        category,
+        min_price,
+        minPrice,
+        max_price,
+        maxPrice,
+        in_stock,
+        is_pinned,
+        featured,
+        sort,
         page,
         limit,
-        search,
-        category,
-        featured,
-        active,
-        minPrice,
-        maxPrice,
-        sort,
       } = req.query;
 
-      const result = await ProductService.getAllProducts({
+      const result = await catalogRepository.findAllCustomer({
+        keyword: keyword || search || '',
+        category_id: category_id || category || '',
+        min_price: min_price !== undefined ? min_price : minPrice,
+        max_price: max_price !== undefined ? max_price : maxPrice,
+        in_stock,
+        is_pinned: is_pinned !== undefined ? is_pinned : featured,
+        sort: sort || 'newest',
         page: page ? parseInt(page, 10) : 1,
         limit: limit ? parseInt(limit, 10) : 20,
-        search,
-        category,
-        featured,
-        active,
-        minPrice,
-        maxPrice,
-        sort,
       });
 
       return res.status(200).json({
         status: 'success',
-        data: result,
+        data: result.items,
+        filters: result.filters,
+        pagination: result.pagination,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /api/v1/products/categories
-  static async getCategories(req, res, next) {
-    try {
-      const categories = await ProductService.getCategories();
-      return res.status(200).json({
-        status: 'success',
-        data: { categories },
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/v1/products/:id
+  // GET /api/v1/products/:id (CAT02)
   static async getById(req, res, next) {
     try {
       const { id } = req.params;
-      const product = await ProductService.getProductById(id);
+      const product = await catalogRepository.findDetailFormatted(id);
+
+      if (!product) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
 
       return res.status(200).json({
         status: 'success',
-        data: { product },
+        data: product,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/products
+  // GET /api/v1/categories (CAT03)
+  static async getCategories(req, res, next) {
+    try {
+      const categories = await catalogRepository.findAllCategories();
+      const formatted = categories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        product_count: Number(c.product_count) || 0,
+      }));
+
+      return res.status(200).json({
+        status: 'success',
+        data: formatted,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Admin Endpoints (ADP01 - ADP07) ---
+
+  // GET /admin/products (ADP01)
+  static async adminGetAll(req, res, next) {
+    try {
+      const { keyword, category_id, is_active, is_pinned, page, limit } = req.query;
+
+      const result = await catalogRepository.findAdminProducts({
+        keyword,
+        category_id,
+        is_active,
+        is_pinned,
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 20,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        data: result.items,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /admin/products/:id (ADP02)
+  static async adminGetById(req, res, next) {
+    try {
+      const { id } = req.params;
+      const product = await catalogRepository.findDetailFormatted(id);
+
+      if (!product) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Không tìm thấy sản phẩm',
+        });
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /admin/products & POST /api/v1/products (ADP03)
   static async create(req, res, next) {
     try {
-      const product = await ProductService.createProduct(req.body);
+      const {
+        name,
+        category,
+        category_id,
+        description,
+        image_ids,
+        image,
+        images,
+        is_active,
+        active,
+        is_pinned,
+        featured,
+        allow_deposit,
+        deposit,
+        deposit_rate,
+        variants,
+        attributes,
+        price,
+        stock,
+      } = req.body;
+
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Tên sản phẩm không được để trống',
+        });
+      }
+
+      // Tự động tính toán giá và tổng tồn kho từ variants
+      let finalPrice = price;
+      let finalStock = stock;
+
+      if (Array.isArray(variants) && variants.length > 0) {
+        const variantPrices = variants.map((v) => Number(v.price) || 0);
+        if (finalPrice === undefined || finalPrice === null || finalPrice === 0) {
+          finalPrice = Math.min(...variantPrices);
+        }
+        if (finalStock === undefined || finalStock === null) {
+          finalStock = variants.reduce((sum, v) => sum + (Number(v.stock_quantity || v.stock) || 0), 0);
+        }
+      }
+
+      const created = await catalogRepository.create({
+        name: name.trim(),
+        category,
+        category_id,
+        description,
+        image: image || (images && images[0]?.url) || '',
+        images: images || [],
+        variants: variants || [],
+        attributes: attributes || [],
+        is_active: is_active !== undefined ? is_active : active,
+        is_pinned: is_pinned !== undefined ? is_pinned : featured,
+        allow_deposit: allow_deposit !== undefined ? allow_deposit : deposit,
+        deposit_rate: deposit_rate || 20,
+        price: finalPrice || 0,
+        stock: finalStock || 0,
+      });
+
+      const formatted = await catalogRepository.findDetailFormatted(created.id);
 
       return res.status(201).json({
         status: 'success',
         message: 'Tạo sản phẩm mới thành công',
-        data: { product },
+        data: {
+          ...formatted,
+          product: formatted,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // PUT /api/v1/products/:id
+  // PATCH /admin/products/:id & PUT /api/v1/products/:id (ADP04)
   static async update(req, res, next) {
     try {
       const { id } = req.params;
-      const product = await ProductService.updateProduct(id, req.body);
+      const existing = await catalogRepository.findById(id);
+
+      if (!existing) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Không tìm thấy sản phẩm để cập nhật',
+        });
+      }
+
+      const {
+        name,
+        category,
+        category_id,
+        description,
+        images,
+        image,
+        variants,
+        attributes,
+        is_active,
+        active,
+        is_pinned,
+        featured,
+        allow_deposit,
+        deposit,
+        deposit_rate,
+        price,
+        stock,
+      } = req.body;
+
+      const updateFields = {};
+      if (name !== undefined) updateFields.name = name;
+      if (category !== undefined) updateFields.category = category;
+      if (category_id !== undefined) updateFields.category_id = category_id;
+      if (description !== undefined) updateFields.description = description;
+      if (image !== undefined) updateFields.image = image;
+      if (images !== undefined) updateFields.images = images;
+      if (attributes !== undefined) updateFields.attributes = attributes;
+      if (is_active !== undefined) updateFields.is_active = is_active;
+      if (active !== undefined) updateFields.active = active;
+      if (is_pinned !== undefined) updateFields.is_pinned = is_pinned;
+      if (featured !== undefined) updateFields.featured = featured;
+      if (allow_deposit !== undefined) updateFields.allow_deposit = allow_deposit;
+      if (deposit !== undefined) updateFields.deposit = deposit;
+      if (deposit_rate !== undefined) updateFields.deposit_rate = deposit_rate;
+      if (price !== undefined) updateFields.price = price;
+
+      // Xử lý biến thể & kiểm tra tồn kho
+      if (Array.isArray(variants)) {
+        updateFields.variants = variants;
+        const totalVariantStock = variants.reduce((sum, v) => sum + (Number(v.stock_quantity || v.stock) || 0), 0);
+        updateFields.stock = totalVariantStock;
+
+        // Ghi lại lịch sử điều chỉnh nếu có thay đổi tồn
+        if (Number(existing.stock) !== totalVariantStock) {
+          try {
+            await inventoryRepository.adjustInventory({
+              product_id: id,
+              variant_id: 'bulk_edit',
+              delta: totalVariantStock - Number(existing.stock),
+              reason: 'Cập nhật từ form chỉnh sửa sản phẩm',
+              actor_id: req.user?.id || null,
+            });
+          } catch {}
+        }
+      } else if (stock !== undefined) {
+        updateFields.stock = stock;
+      }
+
+      await catalogRepository.update(id, updateFields);
+      const formatted = await catalogRepository.findDetailFormatted(id);
 
       return res.status(200).json({
         status: 'success',
         message: 'Cập nhật sản phẩm thành công',
-        data: { product },
+        data: formatted,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // DELETE /api/v1/products/:id
+  // DELETE /admin/products/:id & DELETE /api/v1/products/:id (ADP05)
   static async delete(req, res, next) {
     try {
       const { id } = req.params;
-      await ProductService.deleteProduct(id);
+      const existing = await catalogRepository.findById(id);
+
+      if (!existing) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Không tìm thấy sản phẩm để xóa',
+        });
+      }
+
+      await catalogRepository.delete(id);
 
       return res.status(200).json({
         status: 'success',
         message: 'Xóa sản phẩm thành công',
+        data: {
+          deleted_id: id,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/products/bulk-delete
+  // POST /admin/products/bulk-delete (ADP06)
   static async bulkDelete(req, res, next) {
     try {
       const { ids } = req.body;
-      const result = await ProductService.bulkDelete(ids);
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Vui lòng cung cấp danh sách ID sản phẩm cần xóa',
+        });
+      }
+
+      const result = await catalogRepository.bulkDelete(ids);
 
       return res.status(200).json({
         status: 'success',
-        message: `Đã xóa ${result.deletedCount} sản phẩm thành công`,
-        data: result,
+        message: `Đã xử lý xóa ${result.deleted_ids.length} sản phẩm`,
+        data: {
+          deleted_ids: result.deleted_ids,
+          failed: result.failed,
+          deletedCount: result.deleted_ids.length,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/v1/uploads & POST /admin/uploads (REV03, ADP07)
+  static async upload(req, res, next) {
+    try {
+      const { files, purpose } = req.body;
+
+      const uploadList = [];
+      if (Array.isArray(files) && files.length > 0) {
+        for (const file of files) {
+          const uploaded = await catalogRepository.createUpload({
+            url: file.url || `https://res.cloudinary.com/demo/image/upload/${Date.now()}_${file.file_name || 'img.jpg'}`,
+            file_name: file.file_name || 'image.jpg',
+            mime_type: file.mime_type || 'image/jpeg',
+            size_bytes: file.size_bytes || 102400,
+            purpose: purpose || 'product',
+          });
+          uploadList.push({
+            id: uploaded.id,
+            url: uploaded.url,
+            file_name: uploaded.file_name,
+            mime_type: uploaded.mime_type,
+            size_bytes: Number(uploaded.size_bytes),
+          });
+        }
+      } else {
+        // Fallback file mẫu nếu upload đơn lẻ
+        const uploaded = await catalogRepository.createUpload({
+          url: `https://res.cloudinary.com/demo/image/upload/${Date.now()}_sample.jpg`,
+          file_name: 'sample.jpg',
+          mime_type: 'image/jpeg',
+          size_bytes: 204800,
+          purpose: purpose || 'product',
+        });
+        uploadList.push({
+          id: uploaded.id,
+          url: uploaded.url,
+          file_name: uploaded.file_name,
+          mime_type: uploaded.mime_type,
+          size_bytes: Number(uploaded.size_bytes),
+        });
+      }
+
+      return res.status(201).json({
+        status: 'success',
+        message: 'Tải file thành công',
+        data: uploadList,
       });
     } catch (error) {
       next(error);

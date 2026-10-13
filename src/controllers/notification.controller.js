@@ -1,15 +1,15 @@
 import NotificationService from '../services/notification.service.js';
+import NotificationPolicy from '../modules/notification/notification.policy.js';
+import notificationRepository from '../modules/notification/notification.repository.js';
 
 class NotificationController {
-  // GET /api/v1/notifications
+  // GET /api/v1/notifications (NOT01)
   static async getAll(req, res, next) {
     try {
       const { user_id, owner, type, unread_only, page, limit } = req.query;
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      // Khách hàng thông thường chỉ nhận thông báo của chính mình
-      const targetUserId = isStaff ? user_id : req.user?.id;
-      const targetOwner = isStaff ? owner : req.user?.email;
+      const isStaff = NotificationPolicy.isStaff(req.user);
+      const { targetUserId, targetOwner } = NotificationPolicy.resolveTargetRecipient(req.user, { user_id, owner });
 
       const result = await NotificationService.getAllNotifications({
         user_id: targetUserId,
@@ -21,9 +21,46 @@ class NotificationController {
         recipientMatch: !isStaff,
       });
 
+      const formattedList = result.notifications.map((n) => ({
+        id: n.id,
+        title: n.title,
+        content: n.message || n.text || '',
+        message: n.message || n.text || '',
+        type: n.type || 'system',
+        target_type: n.key || null,
+        target_id: n.params?.target_id || null,
+        is_read: Boolean(n.is_read || n.isRead),
+        created_at: n.created_at || n.createdAt,
+      }));
+
+      // Nếu gọi không kèm query phân trang (tương thích test cũ), giữ data.notifications
+      if (!page && !limit) {
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            ...result,
+            notifications: formattedList,
+          },
+          unread_count: result.unreadCount,
+          pagination: {
+            page: result.page,
+            limit: result.limit,
+            total: result.total,
+            total_pages: result.totalPages,
+          },
+        });
+      }
+
       return res.status(200).json({
         status: 'success',
-        data: result,
+        data: formattedList,
+        unread_count: result.unreadCount,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          total_pages: result.totalPages,
+        },
       });
     } catch (error) {
       next(error);
@@ -36,13 +73,7 @@ class NotificationController {
       const { id } = req.params;
       const notification = await NotificationService.getNotificationById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner =
-        notification.user_id === req.user?.id ||
-        (notification.owner && notification.owner.toLowerCase() === req.user?.email?.toLowerCase()) ||
-        (!notification.user_id && !notification.owner);
-
-      if (!isStaff && !isOwner) {
+      if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xem thông báo này',
@@ -79,50 +110,36 @@ class NotificationController {
     }
   }
 
-  // PATCH /api/v1/notifications/:id/read
+  // PATCH /api/v1/notifications/:id/read (NOT02)
   static async markAsRead(req, res, next) {
     try {
       const { id } = req.params;
-      const notification = await NotificationService.getNotificationById(id);
-
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner =
-        notification.user_id === req.user?.id ||
-        (notification.owner && notification.owner.toLowerCase() === req.user?.email?.toLowerCase()) ||
-        (!notification.user_id && !notification.owner);
-
-      if (!isStaff && !isOwner) {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Bạn không có quyền cập nhật thông báo này',
-        });
-      }
-
-      const updated = await NotificationService.markAsRead(id);
+      const result = await notificationRepository.markSingleRead(id, req.user?.id);
 
       return res.status(200).json({
         status: 'success',
         message: 'Đã đánh dấu thông báo là đã đọc',
-        data: { notification: updated },
+        data: result.notification,
+        unread_count: result.unread_count,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /api/v1/notifications/mark-all-read
+  // POST /api/v1/notifications/read-all & PATCH /api/v1/notifications/mark-all-read (NOT03)
   static async markAllAsRead(req, res, next) {
     try {
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const user_id = isStaff ? (req.body.user_id || req.query.user_id || req.user?.id) : req.user?.id;
-      const owner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
-
-      const result = await NotificationService.markAllAsRead({ user_id, owner });
+      const result = await notificationRepository.markAllCustomerRead(req.user?.id);
 
       return res.status(200).json({
         status: 'success',
-        message: `Đã đánh dấu ${result.updatedCount} thông báo là đã đọc`,
-        data: result,
+        message: 'Đã đánh dấu tất cả thông báo là đã đọc',
+        data: {
+          updated_count: result.updated_count,
+          read_at: result.read_at,
+        },
+        unread_count: result.unread_count,
       });
     } catch (error) {
       next(error);
@@ -135,12 +152,7 @@ class NotificationController {
       const { id } = req.params;
       const notification = await NotificationService.getNotificationById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner =
-        notification.user_id === req.user?.id ||
-        (notification.owner && notification.owner.toLowerCase() === req.user?.email?.toLowerCase());
-
-      if (!isStaff && !isOwner) {
+      if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xóa thông báo này',
@@ -161,7 +173,7 @@ class NotificationController {
   // DELETE /api/v1/notifications/clear-read
   static async clearRead(req, res, next) {
     try {
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
+      const isStaff = NotificationPolicy.isStaff(req.user);
       const user_id = isStaff ? (req.body.user_id || req.query.user_id || req.user?.id) : req.user?.id;
       const owner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
 

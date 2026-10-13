@@ -1,0 +1,35 @@
+meta {
+  name: SET02 - Update Shop Settings
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{baseUrl}}/admin/settings/shop
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "ABC Shop Official Premium",
+    "business_mode": "online_and_store",
+    "description": "Cửa hàng phụ kiện & công nghệ chính hãng hàng đầu"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.name).to.equal("ABC Shop Official Premium");
+  });
+}

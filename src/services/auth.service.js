@@ -7,9 +7,7 @@ import {
   hashToken,
 } from '../utils/jwt.js';
 import { isValidEmail, isValidPassword } from '../validations/auth.validation.js';
-
-// Map lưu các tác vụ refresh token đang chạy để xử lý race condition khi nhiều request đồng thời
-const inFlightRefreshes = new Map();
+import lockManager from '../common/ports/ILockManager.js';
 
 class AuthService {
   // Logic đăng ký tài khoản
@@ -165,60 +163,50 @@ class AuthService {
 
     // Xử lý chống race condition khi nhiều request refresh đồng thời (RFC 6819 Concurrency Mitigation)
     const tokenHash = hashToken(trimmedToken);
-    if (inFlightRefreshes.has(tokenHash)) {
-      return await inFlightRefreshes.get(tokenHash);
-    }
 
-    const refreshPromise = (async () => {
-      try {
-        // 2. Kiểm tra Refresh Token có khớp trong DB không
-        const user = await UserModel.findByRefreshToken(trimmedToken);
-        if (!user || user.id !== decoded.id) {
-          // PHÁT HIỆN TÁI SỬ DỤNG TOKEN (Token Reuse Detection):
-          // Chữ ký JWT hợp lệ và chưa hết hạn, nhưng token này không khớp với token đang lưu trong DB.
-          // Điều này báo hiệu token cũ đã được xoay vòng hoặc bị kẻ gian đánh cắp và dùng lại.
-          // Ngay lập tức thu hồi phiên làm việc hiện tại của user để bảo vệ tài khoản!
-          if (decoded && decoded.id) {
-            await UserModel.updateRefreshToken(decoded.id, null);
-          }
-          const error = new Error(
-            'Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại.'
-          );
-          error.statusCode = 403;
-          throw error;
+    return await lockManager.acquireAndExecute(tokenHash, async () => {
+      // 2. Kiểm tra Refresh Token có khớp trong DB không
+      const user = await UserModel.findByRefreshToken(trimmedToken);
+      if (!user || user.id !== decoded.id) {
+        // PHÁT HIỆN TÁI SỬ DỤNG TOKEN (Token Reuse Detection):
+        // Chữ ký JWT hợp lệ và chưa hết hạn, nhưng token này không khớp với token đang lưu trong DB.
+        // Điều này báo hiệu token cũ đã được xoay vòng hoặc bị kẻ gian đánh cắp và dùng lại.
+        // Ngay lập tức thu hồi phiên làm việc hiện tại của user để bảo vệ tài khoản!
+        if (decoded && decoded.id) {
+          await UserModel.updateRefreshToken(decoded.id, null);
         }
-
-        // 3. Kiểm tra trạng thái tài khoản
-        if (user.active === false) {
-          await UserModel.updateRefreshToken(user.id, null);
-          const error = new Error('Tài khoản đã bị khóa hoặc vô hiệu hóa');
-          error.statusCode = 403;
-          throw error;
-        }
-
-        // 4. Sinh Access Token mới và Refresh Token mới (Refresh Token Rotation - RTR)
-        const payload = {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-        };
-        const newAccessToken = generateAccessToken(payload);
-        const newRefreshToken = generateRefreshToken(payload);
-
-        // 5. Cập nhật rf_token mới vào DB
-        await UserModel.updateRefreshToken(user.id, newRefreshToken);
-
-        return {
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-        };
-      } finally {
-        inFlightRefreshes.delete(tokenHash);
+        const error = new Error(
+          'Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại.'
+        );
+        error.statusCode = 403;
+        throw error;
       }
-    })();
 
-    inFlightRefreshes.set(tokenHash, refreshPromise);
-    return await refreshPromise;
+      // 3. Kiểm tra trạng thái tài khoản
+      if (user.active === false) {
+        await UserModel.updateRefreshToken(user.id, null);
+        const error = new Error('Tài khoản đã bị khóa hoặc vô hiệu hóa');
+        error.statusCode = 403;
+        throw error;
+      }
+
+      // 4. Sinh Access Token mới và Refresh Token mới (Refresh Token Rotation - RTR)
+      const payload = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      };
+      const newAccessToken = generateAccessToken(payload);
+      const newRefreshToken = generateRefreshToken(payload);
+
+      // 5. Cập nhật rf_token mới vào DB
+      await UserModel.updateRefreshToken(user.id, newRefreshToken);
+
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+    });
   }
 
   // Logic đăng xuất: xóa rf_token trong database
@@ -226,6 +214,104 @@ class AuthService {
     if (!userId) return false;
     await UserModel.updateRefreshToken(userId, null);
     return true;
+  }
+
+  // Lấy thông tin tài khoản cá nhân hiện tại
+  static async getMe(userId) {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      const error = new Error('Không tìm thấy người dùng');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (user.active === false) {
+      const error = new Error('Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone || null,
+      role: user.role,
+      is_active: user.active !== false,
+      default_address_id: user.default_address_id || null,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+    };
+  }
+
+  // Cập nhật thông tin cá nhân (name, phone)
+  static async updateMe(userId, { name, phone }) {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      const error = new Error('Không tìm thấy người dùng');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const fields = {};
+    if (name && name.trim()) fields.name = name.trim();
+    if (phone !== undefined) fields.phone = phone ? phone.trim() : null;
+
+    const updated = await UserModel.update(userId, fields);
+    return {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      phone: updated.phone || null,
+      role: updated.role,
+      is_active: updated.active !== false,
+      default_address_id: updated.default_address_id || null,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at,
+    };
+  }
+
+  // Đổi mật khẩu
+  static async changePassword(userId, { current_password, new_password, new_password_confirmation }) {
+    if (!current_password || !new_password) {
+      const error = new Error('Vui lòng nhập mật khẩu hiện tại và mật khẩu mới');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (new_password.length < 6) {
+      const error = new Error('Mật khẩu mới phải có ít nhất 6 ký tự');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (new_password_confirmation && new_password !== new_password_confirmation) {
+      const error = new Error('Xác nhận mật khẩu mới không khớp');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const userWithPassword = await UserModel.findByEmail((await UserModel.findById(userId))?.email);
+    if (!userWithPassword) {
+      const error = new Error('Không tìm thấy người dùng');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const isMatch = await comparePassword(current_password, userWithPassword.password);
+    if (!isMatch) {
+      const error = new Error('Mật khẩu hiện tại không chính xác');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const hashed = await hashPassword(new_password);
+    const updated = await UserModel.updatePassword(userId, hashed);
+
+    return {
+      success: true,
+      updated_at: updated?.updated_at || new Date().toISOString(),
+    };
   }
 }
 

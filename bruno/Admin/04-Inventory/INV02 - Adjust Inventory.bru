@@ -1,0 +1,35 @@
+meta {
+  name: INV02 - Adjust Inventory
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/admin/inventory/adjustments
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "product_id": "{{productId}}",
+    "delta": 15,
+    "reason": "Nhập kho đợt mới từ nhà phân phối"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.delta).to.equal(15);
+  });
+}

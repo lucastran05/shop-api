@@ -1,0 +1,35 @@
+meta {
+  name: ADY02 - Refund Order Admin
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/admin/orders/{{orderId}}/refunds
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "amount": 500000,
+    "reason": "Hoàn tiền cọc do đơn bị hủy",
+    "transaction_reference": "REFUND_TX_001"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.status).to.equal("completed");
+  });
+}

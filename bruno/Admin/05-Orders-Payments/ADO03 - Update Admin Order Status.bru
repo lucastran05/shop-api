@@ -1,0 +1,36 @@
+meta {
+  name: ADO03 - Update Admin Order Status
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/admin/orders/{{orderId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "processing",
+    "carrier": "Giao Hàng Nhanh",
+    "tracking_number": "GHN_99881122",
+    "note": "Đã xác nhận thanh toán và đang đóng gói"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.status).to.equal("processing");
+  });
+}

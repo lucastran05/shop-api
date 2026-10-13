@@ -81,37 +81,76 @@ shop-api/
 
 ---
 
-## 5. Hướng Dẫn Cài Đặt & Chạy Dự Án
+## 5. Hướng Dẫn Khởi Chạy Nhanh (Quick Start)
 
-### Bước 1: Di chuyển vào thư mục backend
+### Cách 1: Khởi chạy toàn bộ hệ thống bằng Docker (Khuyến nghị - 1 Lệnh duy nhất) 🚀
+
+Toàn bộ hệ thống Backend API và Database PostgreSQL được đóng gói hoàn chỉnh bằng Docker Compose với cơ chế tự động khởi tạo database schema và hot-reload khi sửa code.
+
+#### 1. Chuẩn bị file môi trường
 ```bash
-cd shop-api
+# Trên Linux / macOS:
+cp .env.example .env
+
+# Trên Windows (PowerShell):
+copy .env.example .env
 ```
 
-### Bước 2: Tạo file biến môi trường `.env`
-Sao chép cấu hình từ file mẫu `.env.example`:
-- Trên Windows (PowerShell):
-  ```powershell
-  copy .env.example .env
-  ```
-- Hoặc chỉnh sửa giá trị `PORT`, `DB_URI`, `JWT_SECRET` trong `.env` theo nhu cầu.
-
-### Bước 3: Cài đặt các gói thư viện
+#### 2. Khởi chạy toàn bộ với đúng 1 lệnh
 ```bash
+docker compose up -d --build
+```
+
+Sau khi khởi chạy:
+- **API Endpoint:** `http://localhost:5000`
+- **Health Check:** `http://localhost:5000/api/health`
+- **PostgreSQL Database:** `localhost:5432` (User: `postgres`, Password: `postgres`, DB: `shop_db`)
+- **Hot reload:** Mọi thay đổi trong thư mục `src/` sẽ tự động reload ngay lập tức mà không cần build lại container.
+
+#### Các lệnh Docker hữu ích:
+```bash
+# Xem log thời gian thực của API
+docker compose logs -f api
+
+# Kiểm tra trạng thái các container (và kết quả Healthcheck)
+docker compose ps
+
+# Dừng toàn bộ hệ thống
+docker compose down
+
+# Dừng và xóa toàn bộ dữ liệu database để khởi tạo lại từ đầu
+docker compose down -v
+```
+
+---
+
+### Cách 2: Khởi chạy cục bộ trên máy host (Local Node.js & Local PostgreSQL)
+
+Nếu bạn đã có sẵn PostgreSQL 16+ đang chạy trên máy tính cá nhân:
+
+```bash
+# 1. Sao chép file môi trường
+copy .env.example .env
+
+# 2. Cài đặt thư viện dependencies
 npm install
+
+# 3. Khởi chạy môi trường phát triển (tự động reload)
+npm run dev
+
+# Hoặc khởi chạy môi trường production:
+npm start
+
+# 4. Chạy kiểm thử tự động (Unit / Integration Tests)
+npm test
 ```
 
-### Bước 4: Khởi chạy server
+---
 
-- **Chế độ phát triển (Development mode - tự động reload khi sửa code):**
-  ```bash
-  npm run dev
-  ```
+## 6. Hướng Dẫn Viết Tài Liệu API & Tiêu Chuẩn Dự Án
 
-- **Chế độ chạy chính thức (Production mode):**
-  ```bash
-  npm start
-  ```
+Dự án áp dụng quy chuẩn RESTful API nghiêm ngặt. Khi phát triển module hoặc feature mới:
+1. Đọc kỹ quy ước chung tại: [`docs/API_GUIDELINES.md`](file:///c:/Users/lucas-tran/Documents/Subjects/Year4/HK1-LTW/BTL/shop-api/docs/API_GUIDELINES.md) (Naming convention, mã lỗi HTTP, JWT Header, schema response chuẩn).
+2. Sao chép template mẫu tại: [`docs/apis/template.md`](file:///c:/Users/lucas-tran/Documents/Subjects/Year4/HK1-LTW/BTL/shop-api/docs/apis/template.md) sang `docs/apis/<module-name>.md` và điền chi tiết các endpoint kèm lệnh cURL kiểm thử.
+3. Kiểm thử API qua bộ collection Bruno đã được chuẩn hóa tại thư mục [`bruno/`](file:///c:/Users/lucas-tran/Documents/Subjects/Year4/HK1-LTW/BTL/shop-api/bruno/).
 
-Server mặc định sẽ chạy tại: `http://localhost:5000`  
-Kiểm tra tình trạng hoạt động của API tại endpoint: `http://localhost:5000/api/health`

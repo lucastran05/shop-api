@@ -1,0 +1,23 @@
+meta {
+  name: PAY02 - Get Payment Session
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/payments/{{paymentSessionId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.id).to.equal(bru.getEnvVar("paymentSessionId"));
+  });
+}

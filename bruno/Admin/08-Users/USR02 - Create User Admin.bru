@@ -1,0 +1,44 @@
+meta {
+  name: USR02 - Create User Admin
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/admin/users
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Nhân Viên CSKH 01",
+    "email": "cskh01@abcshop.vn",
+    "password": "Password@123",
+    "role": "manager",
+    "is_active": true
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data?.id) {
+    bru.setEnvVar("userId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+    expect(res.getBody().data.role).to.equal("manager");
+  });
+}

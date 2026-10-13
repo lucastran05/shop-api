@@ -1,0 +1,39 @@
+meta {
+  name: ADC02 - Create Category Admin
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/admin/categories
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Gaming Gear"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data?.id) {
+    bru.setEnvVar("categoryId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+  });
+}

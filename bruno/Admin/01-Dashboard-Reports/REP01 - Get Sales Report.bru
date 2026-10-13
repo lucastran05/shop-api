@@ -1,0 +1,30 @@
+meta {
+  name: REP01 - Get Sales Report
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/admin/reports/sales?year=2026&group_by=month&format=json
+  body: none
+  auth: bearer
+}
+
+params:query {
+  year: 2026
+  group_by: month
+  format: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("summary");
+    expect(res.getBody().data.rows).to.be.an("array");
+  });
+}

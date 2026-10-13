@@ -1,0 +1,29 @@
+meta {
+  name: ADM01 - Get Admin Conversations
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/admin/conversations?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 20
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+    expect(res.getBody()).to.have.property("pagination");
+  });
+}

@@ -1,0 +1,22 @@
+meta {
+  name: ADC04 - Delete Single Category
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/admin/categories/{{categoryId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+  });
+}

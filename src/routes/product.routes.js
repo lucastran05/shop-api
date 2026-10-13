@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import ProductController from '../controllers/product.controller.js';
+import ReviewController from '../controllers/review.controller.js';
 import { verifyAuth, requireRole } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -13,6 +14,14 @@ router.get('/', ProductController.getAll);
 
 // Lấy thông tin chi tiết một sản phẩm
 router.get('/:id', ProductController.getById);
+
+// REV01: Xem đánh giá của sản phẩm (công khai)
+router.get('/:product_id/reviews', ReviewController.getReviews);
+router.get('/:id/reviews', ReviewController.getReviews);
+
+// REV02: Gửi đánh giá cho sản phẩm (yêu cầu đăng nhập)
+router.post('/:product_id/reviews', verifyAuth, ReviewController.createReview);
+router.post('/:id/reviews', verifyAuth, ReviewController.createReview);
 
 // --- Protected Endpoints (Chỉ Quản trị viên và Quản lý mới có quyền chỉnh sửa kho hàng) ---
 // Xóa nhiều sản phẩm theo danh sách ID

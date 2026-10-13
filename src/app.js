@@ -3,6 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import apiRoutes from './routes/index.js';
+import adminRoutes from './routes/admin.routes.js';
+
+import errorHandler from './common/middlewares/errorHandler.js';
 
 const app = express();
 
@@ -25,6 +28,10 @@ app.get('/api/health', (req, res) => {
 // Root API Router
 app.use('/api/v1', apiRoutes);
 
+// Admin API Router (METHOD /admin/... theo hợp đồng tài liệu)
+app.use('/admin', adminRoutes);
+app.use('/api/v1/admin', adminRoutes);
+
 // 404 Not Found Handler
 app.use((req, res, next) => {
   res.status(404).json({
@@ -34,18 +41,6 @@ app.use((req, res, next) => {
 });
 
 // Global Error Handler
-app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-
-  // Ghi log lỗi phía server nếu là lỗi nghiêm trọng (500)
-  if (statusCode >= 500) {
-    console.error('💥 Lỗi máy chủ:', err);
-  }
-
-  res.status(statusCode).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error',
-  });
-});
+app.use(errorHandler);
 
 export default app;

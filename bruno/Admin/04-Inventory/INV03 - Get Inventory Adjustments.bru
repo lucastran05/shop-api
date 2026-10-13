@@ -1,0 +1,29 @@
+meta {
+  name: INV03 - Get Inventory Adjustments
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/admin/inventory/adjustments?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 20
+  ~product_id: {{productId}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+  });
+}

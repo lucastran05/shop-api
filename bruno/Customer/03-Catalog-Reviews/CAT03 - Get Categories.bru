@@ -1,0 +1,25 @@
+meta {
+  name: CAT03 - Get Categories
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/categories
+  body: none
+  auth: none
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && Array.isArray(res.getBody()?.data) && res.getBody().data.length > 0) {
+    bru.setEnvVar("categoryId", res.getBody().data[0].id);
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+  });
+}

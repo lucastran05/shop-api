@@ -1,0 +1,31 @@
+meta {
+  name: USR01 - Get Admin Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/admin/users?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 20
+  ~role: customer
+  ~is_active: true
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+    expect(res.getBody()).to.have.property("pagination");
+  });
+}

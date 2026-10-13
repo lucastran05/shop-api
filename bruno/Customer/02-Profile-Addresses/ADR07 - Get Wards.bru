@@ -1,0 +1,23 @@
+meta {
+  name: ADR07 - Get Wards
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/locations/wards?province_code=HN
+  body: none
+  auth: none
+}
+
+params:query {
+  province_code: HN
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+  });
+}

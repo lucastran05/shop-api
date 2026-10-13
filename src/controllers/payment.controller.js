@@ -1,4 +1,6 @@
 import PaymentService from '../services/payment.service.js';
+import BillingPolicy from '../modules/billing/billing.policy.js';
+import billingRepository from '../modules/billing/billing.repository.js';
 
 class PaymentController {
   // GET /api/v1/payments
@@ -14,9 +16,7 @@ class PaymentController {
         payment_type,
       } = req.query;
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      // Nếu là khách hàng bình thường, bắt buộc chỉ được xem thanh toán của chính mình
-      const targetUserId = isStaff ? user_id : req.user?.id;
+      const targetUserId = BillingPolicy.resolveTargetUserId(req.user, user_id);
 
       const result = await PaymentService.getAllPayments({
         page: page ? parseInt(page, 10) : 1,
@@ -43,10 +43,7 @@ class PaymentController {
       const { id } = req.params;
       const payment = await PaymentService.getPaymentById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner = payment.user_id === req.user?.id;
-
-      if (!isStaff && !isOwner) {
+      if (!BillingPolicy.canViewPayment(req.user, payment)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xem thông tin giao dịch này',
@@ -68,8 +65,7 @@ class PaymentController {
       const { orderId } = req.params;
       let payments = await PaymentService.getPaymentsByOrderId(orderId);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      if (!isStaff) {
+      if (!BillingPolicy.isStaff(req.user)) {
         payments = payments.filter((p) => p.user_id === req.user?.id);
         if (payments.length === 0) {
           return res.status(403).json({
@@ -91,12 +87,9 @@ class PaymentController {
   // POST /api/v1/payments
   static async create(req, res, next) {
     try {
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-
-      // Nếu không phải admin/manager, luôn luôn gán user_id là id của chính người đang đăng nhập
       const paymentData = {
         ...req.body,
-        user_id: isStaff ? (req.body.user_id || req.user?.id) : req.user?.id,
+        user_id: BillingPolicy.resolveCreationUserId(req.user, req.body.user_id),
       };
 
       const payment = await PaymentService.createPayment(paymentData);
@@ -161,6 +154,119 @@ class PaymentController {
       return res.status(200).json({
         status: 'success',
         message: 'Xóa bản ghi thanh toán thành công',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/v1/orders/:order_id/payment-sessions (PAY01)
+  static async createSession(req, res, next) {
+    try {
+      const { order_id } = req.params;
+      const { method, purpose } = req.body;
+
+      const session = await billingRepository.createPaymentSession(order_id, {
+        method: method || 'qr',
+        purpose: purpose || 'full',
+      });
+
+      return res.status(201).json({
+        status: 'success',
+        message: 'Tạo phiên thanh toán thành công',
+        data: session,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/v1/payments/:id (PAY02)
+  static async getSession(req, res, next) {
+    try {
+      const { id } = req.params;
+      const session = await billingRepository.getPaymentSession(id);
+
+      if (!session) {
+        // Fallback kiểm tra trong payments bảng cũ
+        return await PaymentController.getById(req, res, next);
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        data: session,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /admin/orders/:order_id/payment-confirmations (ADY01)
+  static async confirmPayment(req, res, next) {
+    try {
+      const { order_id } = req.params;
+      const { kind, amount, transaction_reference, note } = req.body;
+
+      const result = await billingRepository.confirmPayment(order_id, {
+        kind: kind || 'full',
+        amount,
+        transaction_reference,
+        note,
+        confirmed_by: req.user?.id || null,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Ghi nhận thanh toán thành công',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /admin/orders/:order_id/refunds (ADY02)
+  static async refund(req, res, next) {
+    try {
+      const { order_id } = req.params;
+      const { amount, reason, transaction_reference } = req.body;
+
+      const result = await billingRepository.refundOrder(order_id, {
+        amount,
+        reason,
+        transaction_reference,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Ghi nhận hoàn tiền thành công',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/v1/payments/webhooks/:provider (SYS01)
+  static async webhook(req, res, next) {
+    try {
+      const { provider } = req.params;
+      const payload = req.body;
+
+      // Xử lý xác nhận giao dịch từ provider webhook
+      const orderId = payload.orderId || payload.order_id || payload.vnp_TxnRef;
+      if (orderId) {
+        await billingRepository.confirmPayment(orderId, {
+          kind: 'full',
+          amount: payload.amount || payload.vnp_Amount,
+          transaction_reference: payload.transaction_id || payload.vnp_TransactionNo || `WH-${Date.now()}`,
+          note: `Webhook từ ${provider}`,
+        });
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        message: `Webhook ${provider} đã được ghi nhận`,
       });
     } catch (error) {
       next(error);

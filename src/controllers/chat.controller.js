@@ -1,4 +1,6 @@
 import ChatService from '../services/chat.service.js';
+import CommunicationPolicy from '../modules/communication/communication.policy.js';
+import communicationRepository from '../modules/communication/communication.repository.js';
 
 class ChatController {
   // GET /api/v1/chat/conversations (Chỉ Admin / Manager)
@@ -20,9 +22,7 @@ class ChatController {
     try {
       const { owner, conversation_id, page, limit, unread_only } = req.query;
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      // Khách hàng thông thường chỉ được xem tin nhắn của chính họ
-      const targetOwner = isStaff ? owner : req.user?.email;
+      const targetOwner = CommunicationPolicy.resolveTargetOwner(req.user, owner);
 
       const result = await ChatService.getMessages({
         owner: targetOwner,
@@ -47,10 +47,7 @@ class ChatController {
       const { id } = req.params;
       const message = await ChatService.getMessageById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner = message.owner === req.user?.email || message.sender_id === req.user?.id;
-
-      if (!isStaff && !isOwner) {
+      if (!CommunicationPolicy.canViewMessage(req.user, message)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xem tin nhắn này',
@@ -69,14 +66,13 @@ class ChatController {
   // POST /api/v1/chat/messages
   static async sendMessage(req, res, next) {
     try {
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
+      const isStaff = CommunicationPolicy.isStaff(req.user);
 
       const payload = {
         ...req.body,
         sender_id: req.user?.id,
         sender_name: req.user?.name || req.body.sender_name,
         sender_role: isStaff ? (req.body.sender_role || 'shop') : 'customer',
-        // Nếu không phải nhân viên, chủ cuộc hội thoại luôn là email của chính khách hàng đó
         owner: isStaff ? (req.body.owner || req.user?.email) : req.user?.email,
       };
 
@@ -98,10 +94,7 @@ class ChatController {
       const { id } = req.params;
       const existing = await ChatService.getMessageById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner = existing.owner === req.user?.email || existing.sender_id === req.user?.id;
-
-      if (!isStaff && !isOwner) {
+      if (!CommunicationPolicy.canViewMessage(req.user, existing)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền cập nhật tin nhắn này',
@@ -123,7 +116,7 @@ class ChatController {
   // PATCH /api/v1/chat/read-all
   static async markAllAsRead(req, res, next) {
     try {
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
+      const isStaff = CommunicationPolicy.isStaff(req.user);
       const targetOwner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
 
       const result = await ChatService.markAllAsRead(targetOwner);
@@ -144,10 +137,7 @@ class ChatController {
       const { id } = req.params;
       const existing = await ChatService.getMessageById(id);
 
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isSender = existing.sender_id === req.user?.id;
-
-      if (!isStaff && !isSender) {
+      if (!CommunicationPolicy.canMutateMessage(req.user, existing)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xóa tin nhắn này',
@@ -169,10 +159,8 @@ class ChatController {
   static async deleteConversation(req, res, next) {
     try {
       const { owner } = req.params;
-      const isStaff = ['admin', 'manager'].includes(req.user?.role);
-      const isOwner = req.user?.email === owner;
 
-      if (!isStaff && !isOwner) {
+      if (!CommunicationPolicy.canDeleteConversation(req.user, owner)) {
         return res.status(403).json({
           status: 'error',
           message: 'Bạn không có quyền xóa hội thoại này',
@@ -185,6 +173,127 @@ class ChatController {
         status: 'success',
         message: `Đã xóa hội thoại với ${result.deletedCount} tin nhắn`,
         data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract CHAT01: Mở chat của khách ---
+  static async openCustomerConversation(req, res, next) {
+    try {
+      const conv = await communicationRepository.getOrCreateCustomerConversation(req.user);
+      return res.status(200).json({
+        status: 'success',
+        data: conv,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract CHAT02: Nạp tin nhắn hội thoại của khách ---
+  static async getCustomerMessages(req, res, next) {
+    try {
+      const { conversation_id } = req.params;
+      const { cursor, limit, after_id } = req.query;
+
+      const result = await communicationRepository.getMessagesByConversation(conversation_id, {
+        cursor,
+        limit,
+        after_id,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        data: result.messages,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract CHAT03: Khách gửi tin nhắn ---
+  static async sendCustomerMessage(req, res, next) {
+    try {
+      const { conversation_id } = req.params;
+      const { content, client_message_id } = req.body;
+
+      const result = await communicationRepository.sendConversationMessage(
+        conversation_id,
+        req.user,
+        { content, client_message_id, sender_role: 'customer' }
+      );
+
+      return res.status(201).json({
+        status: 'success',
+        data: result.message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract ADM01: Quản trị lấy danh sách hội thoại ---
+  static async getAdminConversations(req, res, next) {
+    try {
+      const { keyword, page, limit } = req.query;
+      const result = await communicationRepository.getAdminConversationsList({
+        keyword,
+        page,
+        limit,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        data: result.conversations,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract ADM02: Quản trị nạp tin nhắn hội thoại ---
+  static async getAdminConversationMessages(req, res, next) {
+    try {
+      const { conversation_id } = req.params;
+      const { cursor, limit, after_id } = req.query;
+
+      const result = await communicationRepository.getMessagesByConversation(conversation_id, {
+        cursor,
+        limit,
+        after_id,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        data: result.messages,
+        customer: result.customer,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- Contract ADM03: Shop gửi phản hồi ---
+  static async sendAdminMessage(req, res, next) {
+    try {
+      const { conversation_id } = req.params;
+      const { content, client_message_id } = req.body;
+
+      const result = await communicationRepository.sendConversationMessage(
+        conversation_id,
+        req.user,
+        { content, client_message_id, sender_role: 'shop' }
+      );
+
+      return res.status(201).json({
+        status: 'success',
+        data: result.message,
+        customer: result.customer,
       });
     } catch (error) {
       next(error);

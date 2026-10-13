@@ -1,0 +1,41 @@
+meta {
+  name: PAY01 - Create Payment Session
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/orders/{{orderId}}/payment-sessions
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "method": "qr",
+    "purpose": "deposit"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data?.id) {
+    bru.setEnvVar("paymentSessionId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+    expect(res.getBody().data).to.have.property("qr_image_url");
+  });
+}

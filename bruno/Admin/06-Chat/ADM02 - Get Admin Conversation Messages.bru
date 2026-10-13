@@ -1,0 +1,28 @@
+meta {
+  name: ADM02 - Get Admin Conversation Messages
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/admin/conversations/{{conversationId}}/messages?limit=50
+  body: none
+  auth: bearer
+}
+
+params:query {
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+    expect(res.getBody()).to.have.property("customer");
+  });
+}

@@ -1,0 +1,62 @@
+meta {
+  name: ADP03 - Create Product Admin
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/admin/products
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Bàn phím cơ không dây ABC Mechanical Pro",
+    "description": "Switch Brown êm ái, pin trâu 4000mAh",
+    "category": "Bàn phím",
+    "price": 1850000,
+    "stock": 40,
+    "allow_deposit": true,
+    "deposit_rate": 30,
+    "is_pinned": true,
+    "is_active": true,
+    "variants": [
+      {
+        "label": "Bản Màu Trắng",
+        "color": "Trắng",
+        "price": 1850000,
+        "stock_quantity": 25
+      },
+      {
+        "label": "Bản Màu Đen",
+        "color": "Đen",
+        "price": 1950000,
+        "stock_quantity": 15
+      }
+    ]
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data?.id) {
+    bru.setEnvVar("productId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+    expect(res.getBody().data.variants).to.be.an("array");
+  });
+}

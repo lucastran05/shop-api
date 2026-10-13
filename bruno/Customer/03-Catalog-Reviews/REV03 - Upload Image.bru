@@ -1,0 +1,41 @@
+meta {
+  name: REV03 - Upload Image
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/uploads
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "purpose": "review",
+    "files": [
+      {
+        "url": "https://res.cloudinary.com/demo/image/upload/sample_review.jpg",
+        "file_name": "review_photo.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 204800
+      }
+    ]
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.be.an("array");
+  });
+}

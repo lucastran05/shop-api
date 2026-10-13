@@ -1,0 +1,34 @@
+meta {
+  name: ADM03 - Shop Send Message
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/admin/conversations/{{conversationId}}/messages
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "content": "Chào bạn, đơn hàng giao nội thành Hà Nội trong 1-2 ngày làm việc nhé ạ!",
+    "client_message_id": "shop_reply_001"
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.sender_role).to.equal("shop");
+  });
+}

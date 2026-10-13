@@ -1,0 +1,36 @@
+meta {
+  name: ADY01 - Confirm Payment Admin
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/admin/orders/{{orderId}}/payment-confirmations
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "kind": "deposit",
+    "amount": 500000,
+    "transaction_reference": "BANK_TRANS_992211",
+    "note": "Khách chuyển cọc qua Vietcombank"
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.order.deposit_status).to.equal("paid");
+  });
+}

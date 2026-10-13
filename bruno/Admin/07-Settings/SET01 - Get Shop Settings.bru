@@ -1,0 +1,24 @@
+meta {
+  name: SET01 - Get Shop Settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/admin/settings/shop
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("name");
+    expect(res.getBody().data).to.have.property("business_mode");
+  });
+}

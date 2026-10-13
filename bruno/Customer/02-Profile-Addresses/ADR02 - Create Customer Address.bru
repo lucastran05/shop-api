@@ -1,0 +1,44 @@
+meta {
+  name: ADR02 - Create Customer Address
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/me/addresses
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "recipient_name": "Nguyễn Văn Khách",
+    "recipient_phone": "0912345678",
+    "province_code": "HN",
+    "ward_code": "HN_HK_01",
+    "street_address": "Số 15 Phố Hàng Bài",
+    "is_default": true
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody()?.data?.id) {
+    bru.setEnvVar("addressId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 201 Created", function() {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+  });
+}

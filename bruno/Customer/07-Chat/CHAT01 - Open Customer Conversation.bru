@@ -1,0 +1,29 @@
+meta {
+  name: CHAT01 - Open Customer Conversation
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/conversations
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody()?.data?.id) {
+    bru.setEnvVar("conversationId", res.getBody().data.id);
+  }
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data).to.have.property("id");
+  });
+}

@@ -1,0 +1,23 @@
+meta {
+  name: ADR05 - Set Default Address
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/me/addresses/{{addressId}}/default
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+    expect(res.getBody().data.is_default).to.equal(true);
+  });
+}
