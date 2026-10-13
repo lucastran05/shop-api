@@ -107,6 +107,10 @@ Sau khi khởi chạy:
 - **PostgreSQL Database:** `localhost:5432` (User: `postgres`, Password: `postgres`, DB: `shop_db`)
 - **Hot reload:** Mọi thay đổi trong thư mục `src/` sẽ tự động reload ngay lập tức mà không cần build lại container.
 
+> [!TIP]
+> **Lưu ý về lỗi `429 Too Many Requests` khi tải Docker:**
+> Docker Hub giới hạn 100 lần tải/6 giờ cho mỗi IP công cộng không đăng nhập (thường bị chạm giới hạn khi dùng chung mạng trường học/ký túc xá). Dự án đã cấu hình sẵn mirror **AWS ECR Public** (`public.ecr.aws`) để tải trực tiếp không giới hạn. Nếu muốn kéo trực tiếp từ Docker Hub, bạn chỉ cần chạy lệnh `docker login` một lần duy nhất.
+
 #### Các lệnh Docker hữu ích:
 ```bash
 # Xem log thời gian thực của API
