@@ -8,6 +8,7 @@ export class CommunicationRepository {
   async getConversations(client = this.db) {
     const query = `
       SELECT DISTINCT ON (owner)
+        id,
         owner,
         conversation_id,
         sender_name,
@@ -19,7 +20,7 @@ export class CommunicationRepository {
         created_at,
         created_at AS at
       FROM chat_messages
-      ORDER BY owner, created_at DESC;
+      ORDER BY owner, created_at DESC, id DESC;
     `;
     const result = await client.query(query);
 
@@ -232,41 +233,62 @@ export class CommunicationRepository {
   // --- CHAT02 / ADM02: Lấy tin nhắn theo conversation_id ---
 
   async getMessagesByConversation(conversationId, { cursor, limit = 50, after_id } = {}, client = this.db) {
-    const limitNum = parseInt(limit, 10) || 50;
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     const conditions = ['(owner = $1 OR conversation_id = $1)'];
     const values = [conversationId];
 
     if (after_id) {
-      const afterRes = await client.query(`SELECT created_at FROM chat_messages WHERE id = $1;`, [after_id]);
-      if (afterRes.rows[0]) {
-        values.push(afterRes.rows[0].created_at);
-        conditions.push(`created_at > $${values.length}`);
+      const afterRes = await client.query(`
+        SELECT id, created_at FROM chat_messages
+        WHERE id::text = $1 AND (owner = $2 OR conversation_id = $2);
+      `, [after_id, conversationId]);
+      const boundary = afterRes.rows[0];
+      if (!boundary) {
+        const error = new Error('Invalid message boundary');
+        error.statusCode = 400;
+        throw error;
       }
+      values.push(boundary.created_at, boundary.id);
+      conditions.push(`(created_at, id) > ($${values.length - 1}, $${values.length}::uuid)`);
     }
 
     if (cursor) {
-      values.push(cursor);
-      conditions.push(`created_at < $${values.length}`);
+      let boundary;
+      try { boundary = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); } catch {}
+      if (boundary && typeof boundary.created_at === 'string' &&
+          !Number.isNaN(Date.parse(boundary.created_at)) &&
+          typeof boundary.id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(boundary.id)) {
+        values.push(boundary.created_at, boundary.id);
+        conditions.push(`(created_at, id) < ($${values.length - 1}, $${values.length}::uuid)`);
+      } else if (!Number.isNaN(Date.parse(cursor))) {
+        values.push(cursor);
+        conditions.push(`created_at < $${values.length}`);
+      } else {
+        const error = new Error('Invalid message cursor');
+        error.statusCode = 400;
+        throw error;
+      }
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
-
     values.push(limitNum + 1);
-    const limitIdx = values.length;
-
+    const direction = after_id ? 'ASC' : 'DESC';
     const query = `
       SELECT id, COALESCE(conversation_id, owner) AS conversation_id, message AS content,
              sender_role, sender_id, sender_name, created_at
       FROM chat_messages
       ${whereClause}
-      ORDER BY created_at ASC
-      LIMIT $${limitIdx};
+      ORDER BY created_at ${direction}, id ${direction}
+      LIMIT $${values.length};
     `;
     const res = await client.query(query, values);
-
     const hasMore = res.rows.length > limitNum;
-    const rows = hasMore ? res.rows.slice(0, limitNum) : res.rows;
-    const nextCursor = rows.length > 0 ? rows[rows.length - 1].created_at : null;
+    const pageRows = res.rows.slice(0, limitNum);
+    const rows = after_id ? pageRows : pageRows.reverse();
+    const boundary = after_id ? rows.at(-1) : rows[0];
+    const nextCursor = hasMore && boundary ? Buffer.from(JSON.stringify({
+      created_at: boundary.created_at, id: boundary.id,
+    })).toString('base64url') : null;
 
     const messages = rows.map((r) => ({
       id: r.id,

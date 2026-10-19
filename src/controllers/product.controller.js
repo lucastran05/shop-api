@@ -48,7 +48,7 @@ class ProductController {
   // GET /api/v1/products/:id (CAT02)
   static async getById(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = req.params.product_id || req.params.id;
       const product = await catalogRepository.findDetailFormatted(id);
 
       if (!product) {
@@ -115,7 +115,7 @@ class ProductController {
   // GET /admin/products/:id (ADP02)
   static async adminGetById(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = req.params.product_id || req.params.id;
       const product = await catalogRepository.findDetailFormatted(id);
 
       if (!product) {
@@ -214,7 +214,7 @@ class ProductController {
   // PATCH /admin/products/:id & PUT /api/v1/products/:id (ADP04)
   static async update(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = req.params.product_id || req.params.id;
       const existing = await catalogRepository.findById(id);
 
       if (!existing) {
@@ -299,7 +299,7 @@ class ProductController {
   // DELETE /admin/products/:id & DELETE /api/v1/products/:id (ADP05)
   static async delete(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = req.params.product_id || req.params.id;
       const existing = await catalogRepository.findById(id);
 
       if (!existing) {

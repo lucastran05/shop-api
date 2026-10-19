@@ -196,6 +196,9 @@ class ChatController {
   static async getCustomerMessages(req, res, next) {
     try {
       const { conversation_id } = req.params;
+      if (conversation_id !== req.user.id) {
+        return res.status(403).json({ status: 'error', message: 'Bạn không có quyền xem hội thoại này' });
+      }
       const { cursor, limit, after_id } = req.query;
 
       const result = await communicationRepository.getMessagesByConversation(conversation_id, {
@@ -218,6 +221,9 @@ class ChatController {
   static async sendCustomerMessage(req, res, next) {
     try {
       const { conversation_id } = req.params;
+      if (conversation_id !== req.user.id) {
+        return res.status(403).json({ status: 'error', message: 'Bạn không có quyền gửi tin nhắn vào hội thoại này' });
+      }
       const { content, client_message_id } = req.body;
 
       const result = await communicationRepository.sendConversationMessage(
