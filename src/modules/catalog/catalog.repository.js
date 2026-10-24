@@ -690,7 +690,60 @@ export class CatalogRepository {
 
   // --- Reviews (REV01, REV02) ---
 
-  async getReviews(productId, { page = 1, limit = 20 } = {}, client = this.db) {
+  async checkReviewEligibility(productId, userId, client = this.db) {
+    if (!userId) {
+      return {
+        can_review: false,
+        reason: 'not_logged_in',
+        message: 'Bạn cần đăng nhập để đánh giá sản phẩm.',
+      };
+    }
+
+    // Kiểm tra các đơn hàng của khách hàng có chứa sản phẩm này
+    const orderQuery = `
+      SELECT o.id, o.code, o.status, o.status_label
+      FROM orders o
+      JOIN order_items oi ON o.id = oi.order_id
+      WHERE o.user_id = $1 
+        AND (oi.product_id = $2 OR oi.product_id::text = $2::text)
+      ORDER BY 
+        CASE 
+          WHEN o.status IN ('completed', 'delivered') THEN 1
+          WHEN o.status IN ('shipping', 'processing', 'confirmed', 'pending') THEN 2
+          ELSE 3
+        END ASC,
+        o.created_at DESC;
+    `;
+    const orderRes = await client.query(orderQuery, [userId, productId]);
+
+    if (orderRes.rowCount === 0) {
+      return {
+        can_review: false,
+        reason: 'not_purchased',
+        message: 'Bạn cần mua sản phẩm này và nhận hàng thành công để có thể viết đánh giá.',
+      };
+    }
+
+    const hasDelivered = orderRes.rows.some((row) =>
+      ['completed', 'delivered'].includes(row.status)
+    );
+
+    if (!hasDelivered) {
+      return {
+        can_review: false,
+        reason: 'not_delivered',
+        message: 'Đơn hàng của bạn đang được giao hoặc xử lý. Bạn chỉ có thể đánh giá sau khi nhận hàng thành công.',
+      };
+    }
+
+    return {
+      can_review: true,
+      reason: 'eligible',
+      message: 'Bạn đủ điều kiện để đánh giá sản phẩm này.',
+    };
+  }
+
+  async getReviews(productId, { page = 1, limit = 20, userId = null } = {}, client = this.db) {
     const offset = (Math.max(1, page) - 1) * limit;
 
     const countQuery = `
@@ -727,6 +780,11 @@ export class CatalogRepository {
       created_at: r.created_at,
     }));
 
+    let user_eligibility = null;
+    if (userId) {
+      user_eligibility = await this.checkReviewEligibility(productId, userId, client);
+    }
+
     return {
       reviews,
       summary: {
@@ -739,10 +797,20 @@ export class CatalogRepository {
         total,
         total_pages: Math.ceil(total / limit) || 1,
       },
+      user_eligibility,
     };
   }
 
   async createReview(productId, userId, { rating, content = '', image_ids = [] }, client = this.db) {
+    // Chỉ cho phép đánh giá khi khách đã mua hàng và nhận hàng thành công
+    const eligibility = await this.checkReviewEligibility(productId, userId, client);
+    if (!eligibility.can_review) {
+      const err = new Error(eligibility.message);
+      err.statusCode = 403;
+      err.reason = eligibility.reason;
+      throw err;
+    }
+
     // Resolve image URLs from uploads if image_ids are provided
     let images = [];
     if (Array.isArray(image_ids) && image_ids.length > 0) {

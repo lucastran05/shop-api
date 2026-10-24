@@ -4,12 +4,13 @@ class ReviewController {
   // GET /api/v1/products/:product_id/reviews (REV01)
   static async getReviews(req, res, next) {
     try {
-      const { product_id } = req.params;
+      const product_id = req.params.product_id || req.params.id;
       const { page, limit } = req.query;
 
       const result = await catalogRepository.getReviews(product_id, {
         page: page ? parseInt(page, 10) : 1,
         limit: limit ? parseInt(limit, 10) : 20,
+        userId: req.user?.id || null,
       });
 
       return res.status(200).json({
@@ -17,6 +18,22 @@ class ReviewController {
         data: result.reviews,
         summary: result.summary,
         pagination: result.pagination,
+        user_eligibility: result.user_eligibility,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/v1/products/:product_id/reviews/eligibility
+  static async checkEligibility(req, res, next) {
+    try {
+      const product_id = req.params.product_id || req.params.id;
+      const result = await catalogRepository.checkReviewEligibility(product_id, req.user.id);
+
+      return res.status(200).json({
+        status: 'success',
+        data: result,
       });
     } catch (error) {
       next(error);
@@ -26,7 +43,7 @@ class ReviewController {
   // POST /api/v1/products/:product_id/reviews (REV02)
   static async createReview(req, res, next) {
     try {
-      const { product_id } = req.params;
+      const product_id = req.params.product_id || req.params.id;
       const { rating, content, image_ids } = req.body;
 
       if (!rating || Number(rating) < 1 || Number(rating) > 5) {
@@ -56,6 +73,13 @@ class ReviewController {
         summary: result.summary,
       });
     } catch (error) {
+      if (error.statusCode === 403) {
+        return res.status(403).json({
+          status: 'error',
+          reason: error.reason || 'NOT_ELIGIBLE',
+          message: error.message,
+        });
+      }
       next(error);
     }
   }

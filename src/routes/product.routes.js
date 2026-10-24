@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import ProductController from '../controllers/product.controller.js';
 import ReviewController from '../controllers/review.controller.js';
-import { verifyAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { verifyAuth, requireRole, optionalAuth } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -15,11 +15,15 @@ router.get('/', ProductController.getAll);
 // Lấy thông tin chi tiết một sản phẩm
 router.get('/:id', ProductController.getById);
 
-// REV01: Xem đánh giá của sản phẩm (công khai)
-router.get('/:product_id/reviews', ReviewController.getReviews);
-router.get('/:id/reviews', ReviewController.getReviews);
+// Kiểm tra quyền đánh giá (yêu cầu đăng nhập)
+router.get('/:product_id/reviews/eligibility', verifyAuth, ReviewController.checkEligibility);
+router.get('/:id/reviews/eligibility', verifyAuth, ReviewController.checkEligibility);
 
-// REV02: Gửi đánh giá cho sản phẩm (yêu cầu đăng nhập)
+// REV01: Xem đánh giá của sản phẩm (công khai, nếu có token thì kèm user_eligibility)
+router.get('/:product_id/reviews', optionalAuth, ReviewController.getReviews);
+router.get('/:id/reviews', optionalAuth, ReviewController.getReviews);
+
+// REV02: Gửi đánh giá cho sản phẩm (yêu cầu đăng nhập và đã nhận hàng thành công)
 router.post('/:product_id/reviews', verifyAuth, ReviewController.createReview);
 router.post('/:id/reviews', verifyAuth, ReviewController.createReview);
 

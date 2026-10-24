@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import app from './app.js';
-import { initDB } from './config/db.js';
+import pool, { initDB } from './config/db.js';
 
 // Load biến môi trường từ .env
 dotenv.config();
@@ -39,4 +39,8 @@ const startServer = async () => {
   });
 };
 
-startServer();
+startServer().catch(async () => {
+  console.error('[ERROR] Không thể khởi động API vì database chưa sẵn sàng.');
+  await pool.end();
+  process.exitCode = 1;
+});

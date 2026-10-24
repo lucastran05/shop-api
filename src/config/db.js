@@ -35,8 +35,9 @@ const pool = process.env.DATABASE_URL
 
 // Hàm kiểm tra kết nối và khởi tạo bảng users với UUID & rf_token
 export const initDB = async () => {
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
     console.log('📦 Kết nối PostgreSQL thành công!');
 
     // Kích hoạt extension pgcrypto để hỗ trợ gen_random_uuid()
@@ -398,9 +399,20 @@ export const initDB = async () => {
 
     console.log('✅ Hệ thống bảng (users, products, categories, orders, carts, payments, chat, shop, notifications) đã sẵn sàng.');
 
-    client.release();
   } catch (error) {
-    console.error('❌ Lỗi kết nối PostgreSQL:', error.message);
+    const failures = error.errors?.length ? error.errors : [error];
+    const details = failures.map((failure) =>
+      [failure.code, failure.message, failure.address, failure.port].filter(Boolean).join(' ')
+    ).join('; ');
+    console.error('❌ Lỗi khởi tạo PostgreSQL:', details || error.name);
+    if (failures.some((failure) => failure.code === '28P01')) {
+      console.error('Kiểm tra DB_USER/DB_PASSWORD trong .env (hoặc DATABASE_URL nếu có).');
+    } else if (failures.some((failure) => failure.code === 'ECONNREFUSED')) {
+      console.error('Kiểm tra PostgreSQL đã chạy và DB_HOST/DB_PORT trong .env đúng chưa.');
+    }
+    throw error;
+  } finally {
+    client?.release();
   }
 };
 
