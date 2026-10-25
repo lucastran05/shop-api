@@ -86,6 +86,31 @@ class OrderController {
     }
   }
 
+  // POST /admin/orders/bulk-delete
+  static async bulkDeleteAdminOrders(req, res, next) {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Vui lòng cung cấp danh sách ID đơn hàng cần xóa',
+        });
+      }
+
+      const result = await orderRepository.bulkDeleteAdminOrders(ids);
+      return res.status(200).json({
+        status: 'success',
+        message: `Đã xử lý xóa ${result.deleted_ids.length} đơn hàng`,
+        data: {
+          deleted_ids: result.deleted_ids,
+          failed: result.failed,
+          deletedCount: result.deleted_ids.length,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
   // GET /admin/orders/:order_id (ADO02)
   static async getAdminOrderDetail(req, res, next) {
     try {

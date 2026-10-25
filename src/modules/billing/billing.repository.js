@@ -300,7 +300,17 @@ export class BillingRepository {
     }
 
     const order = oRes.rows[0];
+    if (['cancelled', 'refunded'].includes(order.status)) {
+      const err = new Error('Không thể xác nhận thanh toán cho đơn đã hủy');
+      err.statusCode = 400;
+      throw err;
+    }
     const confirmAmount = Number(amount) || (kind === 'deposit' ? Number(order.deposit_amount) : Number(order.remaining_amount));
+    if (confirmAmount <= 0 || confirmAmount > Number(order.remaining_amount)) {
+      const err = new Error('Số tiền xác nhận vượt quá số tiền còn phải trả');
+      err.statusCode = 400;
+      throw err;
+    }
 
     const newPaid = Number(order.paid_amount) + confirmAmount;
     const newRemaining = Math.max(0, Number(order.total_amount) - newPaid);
@@ -328,6 +338,8 @@ export class BillingRepository {
           deposit_status = $3,
           deposit_paid_at = $4,
           payment_status = $5,
+          status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+          status_label = CASE WHEN status = 'pending' THEN 'Đã xác nhận' ELSE status_label END,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $6
       RETURNING id, code, status, status_label, payment_status, deposit_status,
@@ -395,8 +407,15 @@ export class BillingRepository {
 
     const order = oRes.rows[0];
     const refundAmount = Number(amount) || Number(order.paid_amount);
+    const refundableAmount = Number(order.paid_amount) - Number(order.refunded_amount);
 
-    if (refundAmount > Number(order.paid_amount)) {
+    if (refundableAmount <= 0) {
+      const err = new Error('Đơn hàng đã được hoàn tiền đầy đủ');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (refundAmount <= 0 || refundAmount > refundableAmount) {
       const err = new Error('Số tiền hoàn không được vượt quá số tiền đã thanh toán');
       err.statusCode = 400;
       throw err;

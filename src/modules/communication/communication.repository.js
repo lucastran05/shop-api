@@ -203,28 +203,48 @@ export class CommunicationRepository {
     return result.rowCount;
   }
 
+  async getConversationContext(conversationId, client = this.db) {
+    const raw = String(conversationId || '').trim();
+    const userRes = await client.query(
+      `SELECT id::text AS id, name, email
+       FROM users
+       WHERE id::text = $1 OR LOWER(email) = LOWER($1)
+       LIMIT 1;`,
+      [raw],
+    );
+    const user = userRes.rows[0] || null;
+    const keys = [...new Set([raw, user?.id, user?.email].filter(Boolean))];
+    return { raw, keys, user };
+  }
+
+  async getStoredConversationKey(conversationId, client = this.db) {
+    const context = await this.getConversationContext(conversationId, client);
+    const result = await client.query(
+      `SELECT owner AS key
+       FROM chat_messages
+       WHERE owner = ANY($1::text[]) OR conversation_id = ANY($1::text[])
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1;`,
+      [context.keys],
+    );
+    return result.rows[0]?.key || context.user?.id || context.raw;
+  }
+
   // --- CHAT01: Mở chat hoặc lấy hội thoại của khách ---
 
   async getOrCreateCustomerConversation(user, client = this.db) {
-    const conversationId = user.id;
-
+    const context = await this.getConversationContext(user.id, client);
     const lastMsgRes = await client.query(`
       SELECT id, message AS content, sender_role, created_at
       FROM chat_messages
-      WHERE owner = $1 OR conversation_id = $1
-      ORDER BY created_at DESC
+      WHERE owner = ANY($1::text[]) OR conversation_id = ANY($1::text[])
+      ORDER BY created_at DESC, id DESC
       LIMIT 1;
-    `, [conversationId]);
-
+    `, [context.keys]);
     const lastMessage = lastMsgRes.rows[0] || null;
-
     return {
-      id: conversationId,
-      customer: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      },
+      id: user.id,
+      customer: { id: user.id, name: user.name, email: user.email },
       last_message: lastMessage,
       created_at: lastMessage?.created_at || new Date().toISOString(),
     };
@@ -233,91 +253,59 @@ export class CommunicationRepository {
   // --- CHAT02 / ADM02: Lấy tin nhắn theo conversation_id ---
 
   async getMessagesByConversation(conversationId, { cursor, limit = 50, after_id } = {}, client = this.db) {
+    const context = await this.getConversationContext(conversationId, client);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
-    const conditions = ['(owner = $1 OR conversation_id = $1)'];
-    const values = [conversationId];
-
+    const conditions = ['(owner = ANY($1::text[]) OR conversation_id = ANY($1::text[]))'];
+    const values = [context.keys];
     if (after_id) {
       const afterRes = await client.query(`
         SELECT id, created_at FROM chat_messages
-        WHERE id::text = $1 AND (owner = $2 OR conversation_id = $2);
-      `, [after_id, conversationId]);
+        WHERE id::text = $1
+          AND (owner = ANY($2::text[]) OR conversation_id = ANY($2::text[]));
+      `, [after_id, context.keys]);
       const boundary = afterRes.rows[0];
-      if (!boundary) {
-        const error = new Error('Invalid message boundary');
-        error.statusCode = 400;
-        throw error;
-      }
+      if (!boundary) { const error = new Error('Invalid message boundary'); error.statusCode = 400; throw error; }
       values.push(boundary.created_at, boundary.id);
-      conditions.push(`(created_at, id) > ($${values.length - 1}, $${values.length}::uuid)`);
+      conditions.push('(created_at, id) > ($' + (values.length - 1) + ', $' + values.length + '::uuid)');
     }
-
     if (cursor) {
       let boundary;
       try { boundary = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); } catch {}
-      if (boundary && typeof boundary.created_at === 'string' &&
-          !Number.isNaN(Date.parse(boundary.created_at)) &&
+      if (boundary && typeof boundary.created_at === 'string' && !Number.isNaN(Date.parse(boundary.created_at)) &&
           typeof boundary.id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(boundary.id)) {
         values.push(boundary.created_at, boundary.id);
-        conditions.push(`(created_at, id) < ($${values.length - 1}, $${values.length}::uuid)`);
+        conditions.push('(created_at, id) < ($' + (values.length - 1) + ', $' + values.length + '::uuid)');
       } else if (!Number.isNaN(Date.parse(cursor))) {
         values.push(cursor);
-        conditions.push(`created_at < $${values.length}`);
-      } else {
-        const error = new Error('Invalid message cursor');
-        error.statusCode = 400;
-        throw error;
-      }
+        conditions.push('created_at < $' + values.length);
+      } else { const error = new Error('Invalid message cursor'); error.statusCode = 400; throw error; }
     }
-
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
     values.push(limitNum + 1);
     const direction = after_id ? 'ASC' : 'DESC';
-    const query = `
-      SELECT id, COALESCE(conversation_id, owner) AS conversation_id, message AS content,
-             sender_role, sender_id, sender_name, created_at
-      FROM chat_messages
-      ${whereClause}
-      ORDER BY created_at ${direction}, id ${direction}
-      LIMIT $${values.length};
-    `;
+    const query = [
+      'SELECT id, COALESCE(conversation_id, owner) AS conversation_id, message AS content,',
+      '       sender_role, sender_id, sender_name, is_read, created_at',
+      'FROM chat_messages',
+      'WHERE ' + conditions.join(' AND '),
+      'ORDER BY created_at ' + direction + ', id ' + direction,
+      'LIMIT $' + values.length + ';',
+    ].join('\n');
     const res = await client.query(query, values);
     const hasMore = res.rows.length > limitNum;
     const pageRows = res.rows.slice(0, limitNum);
     const rows = after_id ? pageRows : pageRows.reverse();
     const boundary = after_id ? rows.at(-1) : rows[0];
-    const nextCursor = hasMore && boundary ? Buffer.from(JSON.stringify({
-      created_at: boundary.created_at, id: boundary.id,
-    })).toString('base64url') : null;
-
+    const nextCursor = hasMore && boundary ? Buffer.from(JSON.stringify({ created_at: boundary.created_at, id: boundary.id })).toString('base64url') : null;
     const messages = rows.map((r) => ({
-      id: r.id,
-      conversation_id: r.conversation_id,
-      content: r.content,
-      sender_role: r.sender_role,
-      sender: {
-        id: r.sender_id || null,
-        name: r.sender_name || (r.sender_role === 'shop' ? 'ABC Shop' : 'Khách hàng'),
-      },
+      id: r.id, conversation_id: r.conversation_id, content: r.content,
+      sender_role: r.sender_role, is_read: r.is_read,
+      sender: { id: r.sender_id || null, name: r.sender_name || (r.sender_role === 'shop' ? 'ABC Shop' : 'Khách hàng') },
       created_at: r.created_at,
     }));
-
-    // Lấy thông tin khách hàng sở hữu cuộc hội thoại
-    let customer = null;
-    const userRes = await client.query(`SELECT id, name, email FROM users WHERE id::text = $1;`, [conversationId]);
-    if (userRes.rows[0]) {
-      customer = userRes.rows[0];
-    } else {
-      customer = { id: conversationId, name: 'Khách hàng', email: '' };
-    }
-
     return {
       messages,
-      customer,
-      pagination: {
-        next_cursor: hasMore ? nextCursor : null,
-        has_more: hasMore,
-      },
+      customer: context.user || { id: context.raw, name: 'Khách hàng', email: '' },
+      pagination: { next_cursor: hasMore ? nextCursor : null, has_more: hasMore },
     };
   }
 
@@ -329,46 +317,49 @@ export class CommunicationRepository {
       err.statusCode = 400;
       throw err;
     }
-
+    const context = await this.getConversationContext(conversationId, client);
+    const storedKey = await this.getStoredConversationKey(conversationId, client);
     const query = `
       INSERT INTO chat_messages (
         owner, conversation_id, sender_id, sender_name, sender_role, message
       )
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, conversation_id, message AS content, sender_role, sender_id, sender_name, created_at;
+      RETURNING id, conversation_id, message AS content, sender_role, sender_id, sender_name, is_read, created_at;
     `;
     const res = await client.query(query, [
-      conversationId,
-      conversationId,
-      senderUser.id,
-      senderUser.name,
-      sender_role,
-      content.trim(),
+      storedKey, storedKey, senderUser.id,
+      senderUser.name || (sender_role === 'shop' ? 'ABC Shop' : 'Khách hàng'),
+      sender_role, content.trim(),
     ]);
     const row = res.rows[0];
-
-    // Lấy customer
-    let customer = null;
-    const userRes = await client.query(`SELECT id, name, email FROM users WHERE id::text = $1;`, [conversationId]);
-    if (userRes.rows[0]) {
-      customer = userRes.rows[0];
-    }
-
     return {
       message: {
         id: row.id,
-        conversation_id: row.conversation_id || conversationId,
+        conversation_id: row.conversation_id || storedKey,
         content: row.content,
         sender_role: row.sender_role,
-        sender: {
-          id: row.sender_id,
-          name: row.sender_name,
-        },
+        is_read: row.is_read,
+        sender: { id: row.sender_id, name: row.sender_name },
         created_at: row.created_at,
         client_message_id: client_message_id || null,
       },
-      customer,
+      customer: context.user,
     };
+  }
+
+  async markConversationAsRead(conversationId, email, client = this.db) {
+    const context = await this.getConversationContext(conversationId, client);
+    if (email && !context.keys.includes(email)) context.keys.push(email);
+    const result = await client.query(
+      `UPDATE chat_messages
+       SET is_read = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE sender_role IN ('shop', 'staff', 'admin', 'manager')
+         AND is_read = FALSE
+         AND (owner = ANY($1::text[]) OR conversation_id = ANY($1::text[]))
+       RETURNING id;`,
+      [context.keys],
+    );
+    return { updatedCount: result.rowCount };
   }
 
   // --- ADM01: Quản trị lấy danh sách hội thoại ---

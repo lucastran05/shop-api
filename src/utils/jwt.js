@@ -4,19 +4,37 @@ import crypto from 'crypto';
 
 dotenv.config();
 
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'default_access_secret_key';
-const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const isProduction = process.env.NODE_ENV === "production";
+const insecurePlaceholders = new Set([
+  "default_access_secret_key",
+  "default_refresh_secret_key",
+  "your_super_secret_jwt_access_key_123456",
+  "your_super_secret_jwt_refresh_key_987654",
+]);
 
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'default_refresh_secret_key';
-const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-
-// Cảnh báo nếu sử dụng secret mặc định trong môi trường production
-if (process.env.NODE_ENV === 'production') {
-  if (ACCESS_SECRET === 'default_access_secret_key' || REFRESH_SECRET === 'default_refresh_secret_key') {
-    console.warn('⚠️ CẢNH BÁO BẢO MẬT: Đang sử dụng JWT Secret mặc định trong môi trường Production!');
+function readSecret(name, legacyName, developmentFallback) {
+  const value = process.env[name] || (legacyName ? process.env[legacyName] : undefined);
+  if (
+    isProduction &&
+    (!value || value.length < 32 || insecurePlaceholders.has(value))
+  ) {
+    throw new Error(`${name} must be a strong secret in production`);
   }
+  return value || developmentFallback;
 }
 
+const ACCESS_SECRET = readSecret(
+  "JWT_ACCESS_SECRET",
+  "JWT_SECRET",
+  crypto.randomBytes(32).toString("hex"),
+);
+const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
+const REFRESH_SECRET = readSecret(
+  "JWT_REFRESH_SECRET",
+  undefined,
+  crypto.randomBytes(32).toString("hex"),
+);
+const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
 /**
  * Hàm băm token bằng SHA-256 để lưu an toàn vào cơ sở dữ liệu
  * Tránh việc lưu Refresh Token dưới dạng plain-text

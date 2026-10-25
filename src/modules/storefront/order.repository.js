@@ -11,6 +11,7 @@ export const ORDER_STATUS_LABELS = {
   confirmed: 'Đã xác nhận',
   processing: 'Đang xử lý',
   shipping: 'Đang giao hàng',
+  delivered: 'Giao thành công',
   completed: 'Hoàn thành',
   cancelled: 'Đã hủy',
   refunded: 'Đã hoàn tiền',
@@ -22,17 +23,19 @@ export const NEXT_STATUS_MAP = {
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   confirmed: [
+    { code: 'processing', label: 'Đóng gói đơn' },
     { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   shipping: [
-    { code: 'completed', label: 'Hoàn thành' },
+    { code: 'delivered', label: 'Giao thành công' },
     { code: 'cancelled', label: 'Giao thất bại / Hủy' },
   ],
   processing: [
     { code: 'shipping', label: 'Giao hàng' },
-    { code: 'completed', label: 'Hoàn thành' },
+    { code: 'delivered', label: 'Giao thành công' },
   ],
+  delivered: [{ code: 'completed', label: 'Hoàn thành' }],
   completed: [],
   cancelled: [],
   refunded: [],
@@ -109,15 +112,23 @@ export class OrderRepository {
     // Địa chỉ nhận hàng
     let recipient = { name: '', phone: '', full_address: '' };
     if (address_id) {
-      const addrRes = await client.query(`SELECT recipient_name, recipient_phone, full_address, street_address, province_name, ward_name FROM user_addresses WHERE id = $1;`, [address_id]);
-      if (addrRes.rows[0]) {
-        const a = addrRes.rows[0];
-        recipient = {
-          name: a.recipient_name,
-          phone: a.recipient_phone,
-          full_address: a.full_address || `${a.street_address}, ${a.ward_name}, ${a.province_name}`,
-        };
+      const addrRes = await client.query(
+        `SELECT recipient_name, recipient_phone, full_address, street_address, province_name, ward_name
+         FROM user_addresses
+         WHERE id = $1 AND user_id = $2;`,
+        [address_id, userId],
+      );
+      if (!addrRes.rows[0]) {
+        const error = new Error('Địa chỉ nhận hàng không hợp lệ');
+        error.statusCode = 400;
+        throw error;
       }
+      const a = addrRes.rows[0];
+      recipient = {
+        name: a.recipient_name,
+        phone: a.recipient_phone,
+        full_address: a.full_address || `${a.street_address}, ${a.ward_name}, ${a.province_name}`,
+      };
     } else if (directRecipient) {
       const prov = findProvinceByCode(directRecipient.province_code);
       const ward = findWardByCode(directRecipient.ward_code);
@@ -302,14 +313,44 @@ export class OrderRepository {
         item.line_total,
       ]);
 
-      // Trừ tồn kho sản phẩm
-      try {
-        await client.query(`
-          UPDATE products
-          SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2;
-        `, [item.quantity, item.product_id]);
-      } catch {}
+      // Trừ tồn kho theo biến thể và đồng bộ tổng tồn kho sản phẩm.
+      const productRes = await client.query(
+        `SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE;`,
+        [item.product_id],
+      );
+      if (productRes.rows[0]) {
+        const product = productRes.rows[0];
+        let variants = Array.isArray(product.variants) ? product.variants : [];
+        if (typeof product.variants === 'string') {
+          try { variants = JSON.parse(product.variants); } catch { variants = []; }
+        }
+        const variantIndex = variants.findIndex(
+          (variant) => String(variant.id) === String(item.variant_id),
+        );
+        if (variantIndex >= 0) {
+          const variant = variants[variantIndex];
+          const before = Number(variant.stock_quantity ?? variant.stock ?? 0);
+          const after = Math.max(0, before - Number(item.quantity));
+          variants[variantIndex] = {
+            ...variant,
+            stock_quantity: after,
+            stock: after,
+          };
+          const totalStock = variants.reduce(
+            (sum, entry) => sum + Number(entry.stock_quantity ?? entry.stock ?? 0),
+            0,
+          );
+          await client.query(
+            `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3;`,
+            [totalStock, JSON.stringify(variants), item.product_id],
+          );
+        } else {
+          await client.query(
+            `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2;`,
+            [item.quantity, item.product_id],
+          );
+        }
+      }
     }
 
     // Xóa các dòng đã đặt khỏi giỏ hàng
@@ -536,9 +577,42 @@ export class OrderRepository {
     ]);
 
     // Hoàn lại tồn kho
-    const itemsRes = await client.query(`SELECT product_id, quantity FROM order_items WHERE order_id = $1;`, [orderId]);
+    const itemsRes = await client.query(
+      `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1;`,
+      [orderId],
+    );
     for (const item of itemsRes.rows) {
-      await client.query(`UPDATE products SET stock = stock + $1 WHERE id = $2;`, [item.quantity, item.product_id]);
+      const productRes = await client.query(
+        `SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE;`,
+        [item.product_id],
+      );
+      const product = productRes.rows[0];
+      if (!product) continue;
+      let variants = Array.isArray(product.variants) ? product.variants : [];
+      if (typeof product.variants === 'string') {
+        try { variants = JSON.parse(product.variants); } catch { variants = []; }
+      }
+      const variantIndex = variants.findIndex(
+        (variant) => String(variant.id) === String(item.variant_id),
+      );
+      if (variantIndex >= 0) {
+        const variant = variants[variantIndex];
+        const stock = Number(variant.stock_quantity ?? variant.stock ?? 0) + Number(item.quantity);
+        variants[variantIndex] = { ...variant, stock_quantity: stock, stock };
+        const totalStock = variants.reduce(
+          (sum, entry) => sum + Number(entry.stock_quantity ?? entry.stock ?? 0),
+          0,
+        );
+        await client.query(
+          `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3;`,
+          [totalStock, JSON.stringify(variants), item.product_id],
+        );
+      } else {
+        await client.query(
+          `UPDATE products SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2;`,
+          [item.quantity, item.product_id],
+        );
+      }
     }
 
     const updated = res.rows[0];
@@ -615,7 +689,9 @@ export class OrderRepository {
       SELECT o.id, o.code, o.status, o.status_label, o.payment_status, o.deposit_status,
              o.deposit_paid_at, o.total_amount, o.deposit_amount, o.paid_amount,
              o.refunded_amount, o.held_amount, o.remaining_amount, o.created_at, o.updated_at,
-             o.payment_method, o.recipient,
+             o.payment_method, o.recipient, o.note,
+             (SELECT pc.note FROM payment_confirmations pc
+              WHERE pc.order_id = o.id ORDER BY pc.confirmed_at DESC LIMIT 1) AS payment_note,
              u.id AS user_id, u.name AS user_name, u.email AS user_email
       FROM orders o
       LEFT JOIN users u ON o.user_id = u.id
@@ -628,7 +704,7 @@ export class OrderRepository {
     const orders = dataRes.rows.map((row) => {
       const parsedRecipient = typeof row.recipient === 'object' ? row.recipient : {};
       const allowedActions = [];
-      if (['pending', 'confirmed', 'shipping'].includes(row.status)) {
+      if (NEXT_STATUS_MAP[row.status]?.length) {
         allowedActions.push('update_status');
       }
 
@@ -655,6 +731,8 @@ export class OrderRepository {
         },
         recipient_name: parsedRecipient?.name || row.user_name || 'Khách nhận',
         payment_method: row.payment_method,
+        note: row.note || '',
+        payment_note: row.payment_note || '',
         allowed_actions: allowedActions,
       };
     });
@@ -670,6 +748,50 @@ export class OrderRepository {
     };
   }
 
+  async bulkDeleteAdminOrders(ids = [], client = this.db) {
+    const deleted_ids = [];
+    const failed = [];
+
+    for (const id of [...new Set(ids)]) {
+      const result = await client.query(
+        `SELECT id, code, status, paid_amount, refunded_amount
+         FROM orders WHERE id = $1 LIMIT 1;`,
+        [id],
+      );
+      const order = result.rows[0];
+      if (!order) {
+        failed.push({ id, code: 'NOT_FOUND', message: 'Không tìm thấy đơn hàng' });
+        continue;
+      }
+
+      if (
+        order.status !== 'cancelled' ||
+        Number(order.paid_amount || 0) > 0 ||
+        Number(order.refunded_amount || 0) > 0
+      ) {
+        failed.push({
+          id,
+          code: 'ORDER_NOT_DELETABLE',
+          message: 'Chỉ được xóa đơn đã hủy và chưa phát sinh thanh toán',
+        });
+        continue;
+      }
+
+      await client.query('DELETE FROM payments WHERE order_id = $1;', [id]);
+      const deleted = await client.query(
+        `DELETE FROM orders
+         WHERE id = $1 AND status = 'cancelled'
+           AND COALESCE(paid_amount, 0) = 0
+           AND COALESCE(refunded_amount, 0) = 0
+         RETURNING id;`,
+        [id],
+      );
+      if (deleted.rows[0]) deleted_ids.push(id);
+      else failed.push({ id, code: 'DELETE_FAILED', message: 'Không thể xóa đơn hàng' });
+    }
+
+    return { deleted_ids, failed };
+  }
   // --- ADO02: Quản trị chi tiết đơn hàng ---
 
   async getAdminOrderDetail(orderId, client = this.db) {
@@ -692,6 +814,10 @@ export class OrderRepository {
       FROM order_items
       WHERE order_id = $1;
     `, [orderId]);
+    const paymentNoteRes = await client.query(
+      `SELECT note FROM payment_confirmations WHERE order_id = $1 ORDER BY confirmed_at DESC LIMIT 1;`,
+      [orderId],
+    );
 
     const allowedNext = NEXT_STATUS_MAP[row.status] || [];
     const allowedActions = allowedNext.length > 0 ? ['change_status', 'update_shipment'] : [];
@@ -715,6 +841,8 @@ export class OrderRepository {
       deposit_status: row.deposit_status,
       deposit_paid_at: row.deposit_paid_at,
       payment_method: row.payment_method,
+      note: row.note || '',
+      payment_note: paymentNoteRes.rows[0]?.note || '',
       payment_mode: row.payment_mode,
       delivery_method: row.delivery_method,
       subtotal: Number(row.subtotal),
@@ -751,7 +879,7 @@ export class OrderRepository {
     status,
     carrier,
     tracking_number,
-    note = '',
+    note,
     expected_updated_at,
   }, actorName = 'Quản trị viên', client = this.db) {
     const existing = await client.query(`SELECT * FROM orders WHERE id = $1 LIMIT 1;`, [orderId]);
@@ -762,16 +890,36 @@ export class OrderRepository {
     }
 
     const order = existing.rows[0];
+    const nextNote = note === undefined ? (order.note || '') : String(note);
     let newStatus = status || order.status;
+    if (newStatus !== order.status && !NEXT_STATUS_MAP[order.status]?.some((item) => item.code === newStatus)) {
+      const err = new Error('Trạng thái đơn hàng không thể chuyển theo quy trình hiện tại');
+      err.statusCode = 400;
+      throw err;
+    }
     let newStatusLabel = ORDER_STATUS_LABELS[newStatus] || newStatus;
 
     let parsedShipment = typeof order.shipment === 'object' ? order.shipment : {};
+    if (['cancelled', 'refunded'].includes(newStatus) &&
+        ((carrier !== undefined && String(carrier).trim()) ||
+         (tracking_number !== undefined && String(tracking_number).trim()))) {
+      const err = new Error('Đơn đã hủy hoặc hoàn tiền không được cập nhật vận đơn');
+      err.statusCode = 400;
+      throw err;
+    }
     if (carrier !== undefined) parsedShipment.carrier = carrier;
     if (tracking_number !== undefined) parsedShipment.tracking_number = tracking_number;
+    if (newStatus === 'shipping' &&
+        (!String(parsedShipment.carrier || '').trim() ||
+         !String(parsedShipment.tracking_number || '').trim())) {
+      const err = new Error('Đơn đang giao cần có đơn vị vận chuyển và mã vận đơn');
+      err.statusCode = 400;
+      throw err;
+    }
     if (newStatus === 'shipping' && !parsedShipment.shipped_at) {
       parsedShipment.shipped_at = new Date().toISOString();
     }
-    if (newStatus === 'completed' && !parsedShipment.delivered_at) {
+    if (['delivered', 'completed'].includes(newStatus) && !parsedShipment.delivered_at) {
       parsedShipment.delivered_at = new Date().toISOString();
     }
 
@@ -803,8 +951,9 @@ export class OrderRepository {
           shipment = $3,
           history = $4,
           completed_at = $5,
+          note = $6,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $6
+      WHERE id = $7
       RETURNING id, code, status, status_label, payment_status, deposit_status,
                 deposit_paid_at, total_amount, deposit_amount, paid_amount,
                 refunded_amount, held_amount, remaining_amount, created_at,
@@ -816,8 +965,21 @@ export class OrderRepository {
       JSON.stringify(parsedShipment),
       JSON.stringify(parsedHistory),
       completedAt,
+      nextNote,
       orderId,
     ]);
+
+    if (note !== undefined) {
+      await client.query(
+        `UPDATE payment_confirmations
+         SET note = $1
+         WHERE id = (
+           SELECT id FROM payment_confirmations
+           WHERE order_id = $2 ORDER BY confirmed_at DESC LIMIT 1
+         );`,
+        [nextNote, orderId],
+      );
+    }
 
     const updated = res.rows[0];
     const allowedNext = NEXT_STATUS_MAP[updated.status] || [];

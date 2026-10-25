@@ -28,7 +28,7 @@ export const verifyAuth = (req, res, next) => {
   } catch (error) {
     return res.status(401).json({
       status: 'error',
-      message: error.message || 'Token không hợp lệ hoặc đã hết hạn',
+      message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn',
     });
   }
 };

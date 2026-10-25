@@ -1,5 +1,6 @@
 import catalogRepository from '../modules/catalog/catalog.repository.js';
 import inventoryRepository from '../modules/storefront/inventory.repository.js';
+import { removeStoredImage, storeImage } from '../services/upload-storage.js';
 
 class ProductController {
   // GET /api/v1/products (CAT01)
@@ -353,35 +354,48 @@ class ProductController {
 
   // POST /api/v1/uploads & POST /admin/uploads (REV03, ADP07)
   static async upload(req, res, next) {
+    const storedFiles = [];
     try {
-      const { files, purpose } = req.body;
+      const files = Array.isArray(req.files) ? req.files : [];
+      const purpose = String(req.body?.purpose || "review");
+      const allowedPurposes = new Set(["review", "product", "avatar"]);
+      if (!allowedPurposes.has(purpose)) {
+        return res.status(400).json({
+          status: "error",
+          message: "Mục đích tải ảnh không hợp lệ",
+        });
+      }
+      if (files.length < 1 || files.length > 3) {
+        return res.status(400).json({
+          status: "error",
+          message: "Vui lòng tải từ 1 đến 3 ảnh",
+        });
+      }
 
+      const maxSize = purpose === "review" ? 2 * 1024 * 1024 : 10 * 1024 * 1024;
+      const baseUrl = (process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
       const uploadList = [];
-      if (Array.isArray(files) && files.length > 0) {
-        for (const file of files) {
-          const uploaded = await catalogRepository.createUpload({
-            url: file.url || `https://res.cloudinary.com/demo/image/upload/${Date.now()}_${file.file_name || 'img.jpg'}`,
-            file_name: file.file_name || 'image.jpg',
-            mime_type: file.mime_type || 'image/jpeg',
-            size_bytes: file.size_bytes || 102400,
-            purpose: purpose || 'product',
-          });
-          uploadList.push({
-            id: uploaded.id,
-            url: uploaded.url,
-            file_name: uploaded.file_name,
-            mime_type: uploaded.mime_type,
-            size_bytes: Number(uploaded.size_bytes),
-          });
+      for (const file of files) {
+        if (file.size > maxSize) {
+          const error = new Error(
+            `Ảnh không được vượt quá ${purpose === "review" ? "2" : "10"} MB`,
+          );
+          error.statusCode = 413;
+          throw error;
         }
-      } else {
-        // Fallback file mẫu nếu upload đơn lẻ
+        const stored = await storeImage(file);
+        storedFiles.push(stored.fileName);
+        const originalName = String(file.originalname || stored.fileName)
+          .split(/[\\/]/)
+          .pop()
+          .replace(/[^a-zA-Z0-9._ -]/g, "_")
+          .slice(0, 255) || stored.fileName;
         const uploaded = await catalogRepository.createUpload({
-          url: `https://res.cloudinary.com/demo/image/upload/${Date.now()}_sample.jpg`,
-          file_name: 'sample.jpg',
-          mime_type: 'image/jpeg',
-          size_bytes: 204800,
-          purpose: purpose || 'product',
+          url: `${baseUrl}/uploads/${stored.fileName}`,
+          file_name: originalName,
+          mime_type: file.mimetype,
+          size_bytes: file.size,
+          purpose,
         });
         uploadList.push({
           id: uploaded.id,
@@ -393,11 +407,12 @@ class ProductController {
       }
 
       return res.status(201).json({
-        status: 'success',
-        message: 'Tải file thành công',
+        status: "success",
+        message: "Tải file thành công",
         data: uploadList,
       });
     } catch (error) {
+      await Promise.allSettled(storedFiles.map(removeStoredImage));
       next(error);
     }
   }

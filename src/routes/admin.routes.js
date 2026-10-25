@@ -9,6 +9,7 @@ import DashboardController from '../controllers/dashboard.controller.js';
 import UserController from '../controllers/user.controller.js';
 import ShopController from '../controllers/shop.controller.js';
 import { verifyAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { imageUpload } from '../middlewares/upload.middleware.js';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ router.put('/products/:product_id', ProductController.update);
 router.delete('/products/:product_id', ProductController.delete);
 
 // ADP07: Tải ảnh sản phẩm
-router.post('/uploads', ProductController.upload);
+router.post('/uploads', imageUpload.array('files', 3), ProductController.upload);
 
 // ==========================================
 // 3. ADC01 - ADC05: QUẢN LÝ DANH MỤC
@@ -91,6 +92,7 @@ router.post('/orders/:order_id/payment-confirmations', PaymentController.confirm
 router.post('/orders/:order_id/refunds', PaymentController.refund);
 
 // ADO03: Cập nhật trạng thái đơn, vận đơn, ghi chú
+router.post('/orders/bulk-delete', OrderController.bulkDeleteAdminOrders);
 router.patch('/orders/:order_id', OrderController.updateAdminOrder);
 
 // ADO02: Chi tiết đơn hàng quản trị
@@ -102,6 +104,8 @@ router.get('/orders', OrderController.getAdminOrders);
 // ==========================================
 // 6. ADM01 - ADM03: TIN NHẮN VÀ HỘI THOẠI
 // ==========================================
+// ADM03: Tạo hội thoại mới và gửi tin nhắn đầu tiên cho khách hàng
+router.post('/conversations', ChatController.createAdminConversation);
 // ADM02: Quản trị nạp tin nhắn hội thoại
 router.get('/conversations/:conversation_id/messages', ChatController.getAdminConversationMessages);
 

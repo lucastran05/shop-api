@@ -5,6 +5,13 @@ dotenv.config();
 
 const { Pool } = pkg;
 
+const isProduction = process.env.NODE_ENV === 'production';
+const databaseUrl = process.env.DATABASE_URL;
+const databasePassword = process.env.DB_PASSWORD;
+if (isProduction && !databaseUrl && (!databasePassword || databasePassword === 'postgres')) {
+  throw new Error('DB_PASSWORD or DATABASE_URL must be configured with a non-default value in production');
+}
+
 // Phát hiện môi trường test để tối ưu thời gian chờ giải phóng kết nối
 const isTestEnv =
   process.env.NODE_ENV === 'test' ||
@@ -19,16 +26,16 @@ const poolConfig = {
 };
 
 // Khởi tạo Pool kết nối tới PostgreSQL
-const pool = process.env.DATABASE_URL
+const pool = databaseUrl
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString: databaseUrl,
       ...poolConfig,
     })
   : new Pool({
       host: process.env.DB_HOST || 'localhost',
       port: Number(process.env.DB_PORT) || 5432,
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres',
+      password: databasePassword || 'postgres',
       database: process.env.DB_NAME || 'shop_db',
       ...poolConfig,
     });

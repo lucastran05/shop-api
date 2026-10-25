@@ -53,7 +53,7 @@ class UserController {
     try {
       const { name, email, password, role, phone, address, avatar, active } = req.body;
 
-      if (!name || !email) {
+      if (!name || !email || typeof password !== 'string' || password.length < 6) {
         return res.status(400).json({
           status: 'error',
           message: 'Vui lòng cung cấp tên và email',
@@ -175,11 +175,15 @@ class UserController {
     try {
       const { name, email, password, role, is_active, active } = req.body;
 
-      if (!name || !email) {
+      if (!name || !email || typeof password !== 'string' || password.length < 6) {
         return res.status(400).json({
           status: 'error',
           message: 'Vui lòng cung cấp họ tên và email',
         });
+      }
+
+      if (role && !['customer', 'manager', 'admin'].includes(role)) {
+        return res.status(400).json({ status: 'error', message: 'Invalid role' });
       }
 
       const existing = await identityRepository.findByEmail(email);
@@ -190,14 +194,13 @@ class UserController {
         });
       }
 
-      const rawPassword = password || 'Abc@123456';
-      const hashedPassword = await hashPassword(rawPassword);
+      const hashedPassword = await hashPassword(password);
 
       const created = await identityRepository.create({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password: hashedPassword,
-        role: role || 'customer',
+        role: ['customer', 'manager', 'admin'].includes(role) ? role : 'customer',
         active: is_active !== undefined ? is_active : (active !== undefined ? active : true),
       });
 
@@ -224,7 +227,7 @@ class UserController {
   static async adminUpdateUser(req, res, next) {
     try {
       const { user_id } = req.params;
-      const { name, email, phone, role, is_active, active } = req.body;
+      const { name, email, phone, role, password, is_active, active } = req.body;
 
       const target = await identityRepository.findById(user_id);
       if (!target) {
@@ -246,11 +249,29 @@ class UserController {
       if (name) updates.name = name.trim();
       if (email) updates.email = email.trim().toLowerCase();
       if (phone !== undefined) updates.phone = phone ? phone.trim() : null;
-      if (role) updates.role = role;
+      if (role) {
+        if (!['customer', 'manager', 'admin'].includes(role)) {
+          return res.status(400).json({ status: 'error', message: 'Invalid role' });
+        }
+        updates.role = role;
+      }
       if (is_active !== undefined) updates.active = Boolean(is_active);
       else if (active !== undefined) updates.active = Boolean(active);
 
+      let passwordChanged = false;
+      if (password !== undefined && password !== null && password !== "") {
+        if (typeof password !== "string" || password.length < 6) {
+          return res.status(400).json({
+            status: "error",
+            message: "Mật khẩu mới phải có ít nhất 6 ký tự",
+          });
+        }
+        updates.password = await hashPassword(password);
+        passwordChanged = true;
+      }
+
       const updated = await identityRepository.update(user_id, updates);
+      if (passwordChanged) await identityRepository.updateRefreshToken(user_id, null);
 
       return res.status(200).json({
         status: 'success',

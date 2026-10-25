@@ -117,6 +117,17 @@ class ChatController {
   static async markAllAsRead(req, res, next) {
     try {
       const isStaff = CommunicationPolicy.isStaff(req.user);
+      if (!isStaff) {
+        const result = await communicationRepository.markConversationAsRead(
+          req.user.id,
+          req.user.email,
+        );
+        return res.status(200).json({
+          status: 'success',
+          message: `Đã đánh dấu ${result.updatedCount} tin nhắn là đã đọc`,
+          data: result,
+        });
+      }
       const targetOwner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
 
       const result = await ChatService.markAllAsRead(targetOwner);
@@ -300,6 +311,40 @@ class ChatController {
         status: 'success',
         data: result.message,
         customer: result.customer,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ADM03: Shop tạo hội thoại mới theo email khách hàng
+  static async createAdminConversation(req, res, next) {
+    try {
+      const { email, content, client_message_id } = req.body;
+      if (!email || !String(email).trim()) {
+        const err = new Error('Email khách hàng là bắt buộc');
+        err.statusCode = 400;
+        throw err;
+      }
+      const userRes = await communicationRepository.db.query(
+        `SELECT id, name, email FROM users
+         WHERE LOWER(email) = LOWER($1) AND LOWER(role) = 'customer' LIMIT 1;`,
+        [String(email).trim()],
+      );
+      if (!userRes.rows[0]) {
+        const err = new Error('Không tìm thấy khách hàng');
+        err.statusCode = 404;
+        throw err;
+      }
+      const result = await communicationRepository.sendConversationMessage(
+        userRes.rows[0].id,
+        req.user,
+        { content, client_message_id, sender_role: 'shop' },
+      );
+      return res.status(201).json({
+        status: 'success',
+        data: result.message,
+        customer: userRes.rows[0],
       });
     } catch (error) {
       next(error);
