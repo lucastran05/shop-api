@@ -4,7 +4,7 @@
 
 `routes → middleware → controller → service (nếu có nghiệp vụ) → repository → PostgreSQL`.
 
-Controller định dạng request/response theo API đang được `shop-web/src/services/api` sử dụng. Service giữ validation và điều phối nghiệp vụ. Repository trong `src/modules` chứa SQL. Các controller có thao tác đơn giản có thể gọi repository trực tiếp; không thêm service chỉ để chuyển tiếp lời gọi.
+Controller định dạng request/response theo API đang được `shop-web/src/shared/api` sử dụng. Service giữ validation và điều phối nghiệp vụ. Repository trong `src/modules` chứa SQL. Các controller có thao tác đơn giản có thể gọi repository trực tiếp; không thêm service chỉ để chuyển tiếp lời gọi.
 
 Đã bỏ sáu model chỉ bọc repository và service sản phẩm không còn người gọi. Giữ các phân hệ identity, catalog, storefront, billing, communication và notification. URL, JWT, vỏ `{status,data}` và các route `/admin`, `/api/v1/admin` được giữ tương thích.
 

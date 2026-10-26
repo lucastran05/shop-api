@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import path from 'node:path';
 import apiRoutes from './routes/index.js';
 import adminRoutes from './routes/admin.routes.js';
+import { serveStoredImage } from './services/upload-storage.js';
 
 import errorHandler from './common/middlewares/errorHandler.js';
 
@@ -37,6 +38,7 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(morgan('dev'));
+app.get('/uploads/:fileName', serveStoredImage);
 app.use(
   '/uploads',
   express.static(path.resolve(process.env.UPLOAD_DIR || 'uploads'), {

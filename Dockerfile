@@ -56,7 +56,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY . .
 
 # Phân quyền cho user node bảo mật
-RUN chown -R node:node /app
+RUN mkdir -p /app/uploads && chown -R node:node /app
 
 USER node
 

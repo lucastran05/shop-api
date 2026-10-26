@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import app from './app.js';
 import pool, { initDB } from './config/db.js';
+import { initializeStorage } from './services/upload-storage.js';
 
 // Load biến môi trường từ .env
 dotenv.config();
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   // Kết nối và kiểm tra DB
   await initDB();
+  await initializeStorage();
 
   const server = app.listen(PORT, () => {
     console.log(`[INFO] Server is listening at: http://localhost:${PORT}`);
@@ -39,8 +41,8 @@ const startServer = async () => {
   });
 };
 
-startServer().catch(async () => {
-  console.error('[ERROR] Không thể khởi động API vì database chưa sẵn sàng.');
+startServer().catch(async (error) => {
+  console.error('[ERROR] Không thể khởi động API hoặc storage:', error.message);
   await pool.end();
   process.exitCode = 1;
 });
