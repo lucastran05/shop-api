@@ -1,11 +1,11 @@
-import ShopModel from '../models/shop.model.js';
+import storefrontRepository from '../modules/storefront/storefront.repository.js';
 
 class ShopService {
   // Lấy thông tin cửa hàng (tạo bản ghi mặc định nếu chưa tồn tại)
   static async getShopInfo() {
-    let shop = await ShopModel.getShop();
+    let shop = await storefrontRepository.getShop();
     if (!shop) {
-      shop = await ShopModel.create({});
+      shop = await storefrontRepository.create({});
     }
     return shop;
   }
@@ -18,7 +18,7 @@ class ShopService {
       throw error;
     }
 
-    const updated = await ShopModel.update(updateData);
+    const updated = await storefrontRepository.update(updateData);
     return updated;
   }
 
@@ -30,13 +30,13 @@ class ShopService {
       throw error;
     }
 
-    const created = await ShopModel.update(data);
+    const created = await storefrontRepository.update(data);
     return created;
   }
 
   // Khôi phục cài đặt mặc định
   static async resetShopInfo() {
-    return await ShopModel.resetToDefault();
+    return await storefrontRepository.resetToDefault();
   }
 }
 

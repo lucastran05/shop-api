@@ -1,19 +1,19 @@
-import ChatModel from '../models/chat.model.js';
+import communicationRepository from '../modules/communication/communication.repository.js';
 
 class ChatService {
   // Lấy danh sách hội thoại
   static async getConversations() {
-    return await ChatModel.getConversations();
+    return await communicationRepository.getConversations();
   }
 
   // Lấy tin nhắn theo bộ lọc
   static async getMessages(filters) {
-    return await ChatModel.findMessages(filters);
+    return await communicationRepository.findMessages(filters);
   }
 
   // Lấy chi tiết tin nhắn theo ID
   static async getMessageById(id) {
-    const msg = await ChatModel.findById(id);
+    const msg = await communicationRepository.findById(id);
     if (!msg) {
       const error = new Error('Không tìm thấy tin nhắn');
       error.statusCode = 404;
@@ -41,7 +41,7 @@ class ChatService {
 
     const senderRole = data.sender_role || data.from || 'customer';
 
-    return await ChatModel.create({
+    return await communicationRepository.create({
       owner: owner.trim(),
       message: content.trim(),
       conversation_id: data.conversation_id || data.conversationId,
@@ -53,14 +53,14 @@ class ChatService {
 
   // Đánh dấu tin nhắn đã đọc
   static async markAsRead(id) {
-    const existing = await ChatModel.findById(id);
+    const existing = await communicationRepository.findById(id);
     if (!existing) {
       const error = new Error('Không tìm thấy tin nhắn');
       error.statusCode = 404;
       throw error;
     }
 
-    return await ChatModel.markAsRead(id);
+    return await communicationRepository.markAsRead(id);
   }
 
   // Đánh dấu tất cả tin nhắn đã đọc
@@ -71,20 +71,20 @@ class ChatService {
       throw error;
     }
 
-    const updatedCount = await ChatModel.markAllAsRead(owner.trim());
+    const updatedCount = await communicationRepository.markAllAsRead(owner.trim());
     return { updatedCount };
   }
 
   // Xóa tin nhắn
   static async deleteMessage(id) {
-    const existing = await ChatModel.findById(id);
+    const existing = await communicationRepository.findById(id);
     if (!existing) {
       const error = new Error('Không tìm thấy tin nhắn để xóa');
       error.statusCode = 404;
       throw error;
     }
 
-    return await ChatModel.delete(id);
+    return await communicationRepository.delete(id);
   }
 
   // Xóa toàn bộ hội thoại
@@ -95,7 +95,7 @@ class ChatService {
       throw error;
     }
 
-    const deletedCount = await ChatModel.deleteConversation(owner.trim());
+    const deletedCount = await communicationRepository.deleteConversation(owner.trim());
     return { deletedCount };
   }
 }

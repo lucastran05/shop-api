@@ -3,6 +3,8 @@
 > **Phạm vi:** Khách hàng, Cổng thanh toán (Webhook)  
 > **Cập nhật:** 2026-10-13  
 
+> **Cập nhật triển khai 26/10/2026:** xem [hợp đồng webhook và transaction](../backend-architecture.md). PAY01/PAY02 kiểm tra chủ sở hữu; webhook yêu cầu cả `X-Signature` và `X-Webhook-Timestamp`, HMAC trên timestamp và body gốc. Các URL/QR hiện là sandbox, chưa tích hợp cổng thanh toán thật. Ví dụ cũ bên dưới minh họa cấu trúc; ID triển khai là UUID.
+
 ---
 
 ## 1. Giới thiệu phân hệ & Nghiệp vụ
@@ -119,7 +121,7 @@ Quản lý chu kỳ thanh toán trực tuyến của đơn hàng thông qua Viet
 ### 4.3. SYS01 — Webhook tiếp nhận thanh toán
 - **Method:** `POST`
 - **Path:** `/api/v1/payments/webhook`
-- **Headers:** `X-Signature: sha256_hmac_signature_here`
+- **Headers:** `X-Signature: <HMAC-SHA256 hex>` và `X-Webhook-Timestamp: <Unix seconds>`; ký `timestamp + '.' + rawBody` với secret riêng của provider. Giữ đường dẫn `/webhooks/:provider` và alias `/webhook`.
 
 #### Request Body
 ```json

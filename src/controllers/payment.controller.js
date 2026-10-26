@@ -92,7 +92,7 @@ class PaymentController {
         user_id: BillingPolicy.resolveCreationUserId(req.user, req.body.user_id),
       };
 
-      const payment = await PaymentService.createPayment(paymentData);
+      const payment = await PaymentService.createPayment(paymentData, req.user);
 
       return res.status(201).json({
         status: 'success',
@@ -169,7 +169,7 @@ class PaymentController {
       const session = await billingRepository.createPaymentSession(order_id, {
         method: method || 'qr',
         purpose: purpose || 'full',
-      });
+      }, req.user);
 
       return res.status(201).json({
         status: 'success',
@@ -185,7 +185,7 @@ class PaymentController {
   static async getSession(req, res, next) {
     try {
       const { id } = req.params;
-      const session = await billingRepository.getPaymentSession(id);
+      const session = await billingRepository.getPaymentSession(id, req.user);
 
       if (!session) {
         // Fallback kiểm tra trong payments bảng cũ
@@ -250,19 +250,8 @@ class PaymentController {
   // POST /api/v1/payments/webhooks/:provider (SYS01)
   static async webhook(req, res, next) {
     try {
-      const { provider } = req.params;
-      const payload = req.body;
-
-      // Xử lý xác nhận giao dịch từ provider webhook
-      const orderId = payload.orderId || payload.order_id || payload.vnp_TxnRef;
-      if (orderId) {
-        await billingRepository.confirmPayment(orderId, {
-          kind: 'full',
-          amount: payload.amount || payload.vnp_Amount,
-          transaction_reference: payload.transaction_id || payload.vnp_TransactionNo || `WH-${Date.now()}`,
-          note: `Webhook từ ${provider}`,
-        });
-      }
+      const provider = req.paymentProvider;
+      await PaymentService.processWebhook(provider, req.body);
 
       return res.status(200).json({
         status: 'success',

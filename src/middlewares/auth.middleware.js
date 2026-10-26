@@ -1,72 +1,42 @@
 import { verifyAccessToken } from '../utils/jwt.js';
+import identityRepository from '../modules/identity/identity.repository.js';
+import { UnauthorizedError } from '../common/errors/AppError.js';
 
-// Middleware xác thực JWT Access Token từ Header (Authorization: Bearer <accessToken>)
-export const verifyAuth = (req, res, next) => {
+async function authenticatedUser(req) {
+  const match = /^Bearer ([^\s]+)$/.exec(req.headers.authorization || '');
+  if (!match) throw new UnauthorizedError();
+  let decoded;
   try {
-    const authHeader = req.headers.authorization;
+    decoded = verifyAccessToken(match[1]);
+  } catch {
+    throw new UnauthorizedError('Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
+  }
+  const user = await identityRepository.findById(decoded.id);
+  if (!user || user.active === false) throw new UnauthorizedError('Tài khoản không còn hoạt động');
+  return { ...decoded, id: user.id, email: user.email, role: user.role };
+}
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Bạn chưa đăng nhập hoặc token không hợp lệ',
-      });
-    }
-
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Token không được để trống',
-      });
-    }
-
-    const decoded = verifyAccessToken(token);
-
-    // Gán thông tin user đã giải mã vào req.user
-    req.user = decoded;
+export async function verifyAuth(req, res, next) {
+  try {
+    req.user = await authenticatedUser(req);
     next();
   } catch (error) {
-    return res.status(401).json({
-      status: 'error',
-      message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn',
-    });
+    next(error);
   }
-};
+}
 
-// Middleware kiểm tra quyền hạn (Role-based access control)
-export const requireRole = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Bạn chưa đăng nhập',
-      });
-    }
-
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Bạn không có quyền thực hiện hành động này',
-      });
-    }
-
-    next();
-  };
-};
-
-// Middleware kiểm tra xác thực tùy chọn (nếu có Bearer token hợp lệ thì gán req.user)
-export const optionalAuth = (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      if (token) {
-        const decoded = verifyAccessToken(token);
-        req.user = decoded;
-      }
-    }
-  } catch (error) {
-    // optionalAuth bỏ qua lỗi token để cho phép request tiếp tục dạng khách (guest)
-  }
+export const requireRole = (...roles) => (req, res, next) => {
+  if (!req.user) return res.status(401).json({ status: 'error', message: 'Bạn chưa đăng nhập' });
+  if (!roles.includes(req.user.role)) return res.status(403).json({ status: 'error', message: 'Bạn không có quyền thực hiện hành động này' });
   next();
 };
+
+export async function optionalAuth(req, res, next) {
+  try {
+    if (req.headers.authorization) req.user = await authenticatedUser(req);
+    next();
+  } catch (error) {
+    if (error.statusCode === 401) return next();
+    next(error);
+  }
+}

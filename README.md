@@ -1,4 +1,6 @@
 # Shop app API
+
+Backend dùng Express.js, PostgreSQL và JWT. Kiến trúc hiện tại và hợp đồng webhook được mô tả tại [backend-architecture.md](docs/backend-architecture.md). Các lớp model chuyển tiếp đã được gỡ; service gọi repository trực tiếp. Khởi tạo schema bảo toàn dữ liệu, không tự xóa bảng cũ.
 ## 1. Tech Stack
 
 - **Runtime Environment:** [Node.js (v18+)](https://nodejs.org/)
@@ -24,7 +26,7 @@ shop-api/
 │   ├── constants/          # Các hằng số dùng chung (HTTP Status, User Roles, Order Status, Message,...)
 │   ├── controllers/        # Tiếp nhận request, điều phối gọi Service và trả về HTTP response
 │   ├── middlewares/        # Các middleware trung gian (Authentication, Authorization, Error Handler,...)
-│   ├── models/             # Định nghĩa cấu trúc Schema và Model cơ sở dữ liệu (MongoDB, PostgreSQL, MySQL,...)
+│   ├── modules/            # Repository SQL và policy theo phân hệ nghiệp vụ
 │   ├── routes/             # Khai báo các endpoint URL của API và ánh xạ tới Controller
 │   ├── services/           # Tầng xử lý logic nghiệp vụ chính (Business Logic) và truy vấn dữ liệu
 │   ├── utils/              # Các hàm tiện ích dùng chung (tạo JWT token, hash mật khẩu, response formatter,...)
@@ -47,9 +49,9 @@ shop-api/
 | `src/constants/` | Tập trung toàn bộ hằng số cố định trong hệ thống: mã lỗi HTTP (`StatusCodes`), vai trò người dùng (`ROLES.ADMIN`, `ROLES.CUSTOMER`), trạng thái đơn hàng (`ORDER_STATUS.PENDING`),... tránh viết chuỗi cứng (magic strings). |
 | `src/controllers/` | Tầng điều khiển tiếp nhận `req` (params, body, query) từ client, gọi hàm tương ứng ở tầng `services/` để xử lý và trả về phản hồi `res` (HTTP status code, JSON data). Giữ cho controller gọn gàng, không nhồi nhét logic nghiệp vụ phức tạp. |
 | `src/middlewares/` | Chứa các hàm middleware can thiệp vào chu kỳ request-response: kiểm tra token đăng nhập JWT (`verifyToken`), phân quyền truy cập (`checkRole`), kiểm tra dữ liệu đầu vào (`validateRequest`), bắt và chuẩn hóa lỗi toàn cục (`errorHandler`). |
-| `src/models/` | Định nghĩa lược đồ dữ liệu (Schema/Entity) và quan hệ giữa các bảng/collection: ví dụ `User.js`, `Product.js`, `Category.js`, `Order.js`, `Cart.js`. |
+| `src/modules/` | Repository và policy cho identity, catalog, storefront, billing, communication và notification. Schema PostgreSQL nằm trong `src/config/db.js`. |
 | `src/routes/` | Quản lý danh sách các đường dẫn API theo từng module (ví dụ: `auth.routes.js`, `product.routes.js`, `order.routes.js`) và gom lại vào route tổng (thường là `/api/v1/...`). |
-| `src/services/` | **Tầng cốt lõi của Backend (Business Logic Layer):** Xử lý mọi tính toán, logic mua hàng, áp mã giảm giá, kiểm tra tồn kho, tương tác trực tiếp với tầng `models/` để thêm/sửa/xóa dữ liệu. Tách biệt hoàn toàn khỏi request/response của Express. |
+| `src/services/` | Validation và điều phối nghiệp vụ, gọi repository trong `modules/`. Không dùng lớp model chỉ để chuyển tiếp lời gọi. |
 | `src/utils/` | Lưu trữ các hàm tiện ích có thể tái sử dụng khắp ứng dụng: mã hóa mật khẩu (`bcrypt`), sinh mã ngẫu nhiên, định dạng thời gian, class tùy biến lỗi (`ApiError`), hàm bọc async handler (`catchAsync`),... |
 | `src/validations/` | Định nghĩa các schema kiểm tra tính hợp lệ của dữ liệu trước khi vào controller (ví dụ: kiểm tra email đúng định dạng, mật khẩu tối thiểu 6 ký tự, giá tiền phải lớn hơn 0,... bằng Joi hoặc Zod). |
 

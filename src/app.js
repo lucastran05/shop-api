@@ -29,7 +29,12 @@ app.use(
     maxAge: 600,
   }),
 );
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
+app.use(express.json({
+  limit: process.env.JSON_BODY_LIMIT || "1mb",
+  verify(req, res, buffer) {
+    if (/^\/api\/v1\/payments\/webhooks?(?:\/|$)/.test(req.url.split('?')[0])) req.rawBody = buffer;
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(morgan('dev'));
 app.use(

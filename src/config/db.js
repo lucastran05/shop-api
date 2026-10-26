@@ -45,6 +45,8 @@ export const initDB = async () => {
   let client;
   try {
     client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended('shop-api:schema', 0))");
     console.log('📦 Kết nối PostgreSQL thành công!');
 
     // Kích hoạt extension pgcrypto để hỗ trợ gen_random_uuid()
@@ -54,13 +56,12 @@ export const initDB = async () => {
     const checkIdTypeQuery = `
       SELECT data_type 
       FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = 'id';
+      WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'id';
     `;
     const checkRes = await client.query(checkIdTypeQuery);
 
     if (checkRes.rows.length > 0 && checkRes.rows[0].data_type !== 'uuid') {
-      console.log('🔄 Chuyển đổi bảng users sang khóa chính UUID...');
-      await client.query(`DROP TABLE IF EXISTS users CASCADE;`);
+      throw new Error('users.id is not UUID; migrate the existing schema explicitly. Automatic table deletion is disabled.');
     }
 
     // Tạo bảng users với id UUID và trường rf_token
@@ -432,9 +433,13 @@ export const initDB = async () => {
       );
     `);
 
+    await client.query('CREATE INDEX IF NOT EXISTS idx_payment_confirmations_reference ON payment_confirmations(transaction_reference)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_refunds_reference ON refunds(transaction_reference)');
+    await client.query('COMMIT');
     console.log('✅ Hệ thống bảng (users, products, categories, orders, carts, payments, chat, shop, notifications) đã sẵn sàng.');
 
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     const failures = error.errors?.length ? error.errors : [error];
     const details = failures.map((failure) =>
       [failure.code, failure.message, failure.address, failure.port].filter(Boolean).join(' ')

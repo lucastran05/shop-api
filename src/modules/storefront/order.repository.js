@@ -1,4 +1,6 @@
 import pool from '../../config/db.js';
+import { withTransaction } from '../../config/transaction.js';
+import { BadRequestError, ConflictError, NotFoundError } from '../../common/errors/AppError.js';
 import cartRepository from './cart.repository.js';
 import { LOW_STOCK_THRESHOLD } from './inventory.repository.js';
 import { findProvinceByCode, findWardByCode } from '../../constants/locations.js';
@@ -63,14 +65,20 @@ export class OrderRepository {
   }, client = this.db) {
     let resolvedItems = [];
     let removedCartItemIds = [];
+    if (!['standard', 'express', 'pickup'].includes(delivery_method) ||
+        !['cod', 'bank_transfer', 'qr', 'vietqr', 'momo', 'card'].includes(payment_method) ||
+        !['deposit', 'full'].includes(payment_mode)) throw new BadRequestError('Lựa chọn giao hàng hoặc thanh toán không hợp lệ');
 
     if (Array.isArray(cart_item_ids) && cart_item_ids.length > 0) {
       const cart = await cartRepository.getCart(userId, client);
       resolvedItems = cart.items.filter((item) => cart_item_ids.includes(item.id));
-      removedCartItemIds = cart_item_ids;
+      removedCartItemIds = [...new Set(cart_item_ids)];
+      if (resolvedItems.length !== removedCartItemIds.length) throw new BadRequestError('Dòng giỏ hàng không hợp lệ');
     } else if (Array.isArray(directItems) && directItems.length > 0) {
       for (const item of directItems) {
+        if (!item || typeof item !== 'object' || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) <= 0) throw new BadRequestError('Số lượng sản phẩm phải là số nguyên dương');
         const pRes = await client.query(`SELECT id, name, price, stock, variants, image, active FROM products WHERE id = $1;`, [item.product_id]);
+        if (!pRes.rows[0]) throw new NotFoundError('Không tìm thấy sản phẩm');
         if (pRes.rows[0]) {
           const prod = pRes.rows[0];
           let parsedVariants = Array.isArray(prod.variants) ? prod.variants : [];
@@ -78,9 +86,10 @@ export class OrderRepository {
             try { parsedVariants = JSON.parse(prod.variants); } catch {}
           }
           const matched = parsedVariants.find((v) => String(v.id) === String(item.variant_id)) || parsedVariants[0];
+          if (item.variant_id && parsedVariants.length && !parsedVariants.some(v => String(v.id) === String(item.variant_id))) throw new BadRequestError('Biến thể sản phẩm không hợp lệ');
           const unitPrice = matched?.price !== undefined ? Number(matched.price) : Number(prod.price);
           const stockQty = matched?.stock_quantity !== undefined ? Number(matched.stock_quantity) : Number(prod.stock);
-          const qty = Number(item.quantity) || 1;
+          const qty = Number(item.quantity);
 
           resolvedItems.push({
             product_id: prod.id,
@@ -108,6 +117,10 @@ export class OrderRepository {
       const err = new Error('Không có sản phẩm nào được chọn để báo giá');
       err.statusCode = 400;
       throw err;
+    }
+    for (const item of resolvedItems) {
+      if (!Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) <= 0 || !Number.isFinite(Number(item.unit_price)) || Number(item.unit_price) < 0) throw new BadRequestError('Sản phẩm hoặc số lượng không hợp lệ');
+      if (!item.is_available) throw new ConflictError('Sản phẩm không còn đủ tồn kho hoặc đã ngừng bán');
     }
 
     // Địa chỉ nhận hàng
@@ -194,7 +207,7 @@ export class OrderRepository {
       recipient,
       delivery_method,
       coupon: couponResult,
-      allowed_payment_methods: ['cod', 'bank_transfer', 'qr', 'card'],
+      allowed_payment_methods: ['cod', 'bank_transfer', 'qr', 'vietqr', 'momo', 'card'],
       allowed_deposit_rates: [20, 50, 70],
       subtotal,
       shipping_fee: shippingFee,
@@ -215,6 +228,7 @@ export class OrderRepository {
       user_id: userId,
     };
 
+    for (const [id, value] of quotesCache) if (new Date(value.expires_at) <= new Date()) quotesCache.delete(id);
     quotesCache.set(quoteId, quoteData);
 
     return quoteData;
@@ -223,32 +237,22 @@ export class OrderRepository {
   // --- CHK02: Tạo đơn hàng từ báo giá ---
 
   async createOrderFromQuote(userId, payload, client = this.db) {
-    // Đơn hàng, tồn kho, giỏ hàng và lượt dùng voucher phải cùng một giao dịch.
-    // Nếu một bước thất bại, không để lại đơn dang dở hoặc trừ voucher một phần.
-    if (client === this.db && typeof this.db.connect === 'function') {
-      const transactionClient = await this.db.connect();
-      try {
-        await transactionClient.query('BEGIN');
-        const result = await this.createOrderFromQuote(userId, payload, transactionClient);
-        await transactionClient.query('COMMIT');
-        return result;
-      } catch (error) {
-        try {
-          await transactionClient.query('ROLLBACK');
-        } catch {
-          // Giữ lại lỗi nghiệp vụ ban đầu để middleware trả về đúng mã lỗi.
-        }
-        throw error;
-      } finally {
-        transactionClient.release();
-      }
+    if (client === this.db) {
+      const order = await withTransaction(this.db, tx => this._createOrderFromQuote(userId, payload, tx));
+      quotesCache.delete(payload.quote_id);
+      return order;
     }
-
     return this._createOrderFromQuote(userId, payload, client);
   }
 
   async _createOrderFromQuote(userId, { quote_id, note: overrideNote, quote_data }, client) {
+    if (quote_id) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', ['quote:' + quote_id]);
     let quote = quote_id ? quotesCache.get(quote_id) : null;
+    if (quote_id && (!quote || quote.user_id !== userId || new Date(quote.expires_at) <= new Date())) {
+      const error = new Error('Báo giá không hợp lệ hoặc đã hết hạn');
+      error.statusCode = 400;
+      throw error;
+    }
 
     if (!quote || !quote.items || quote.items.length === 0) {
       // Tự tính quote mới từ payload hoặc giỏ hàng
@@ -316,7 +320,7 @@ export class OrderRepository {
     const order = orderRes.rows[0];
 
     // Tạo các dòng order_items và trừ kho
-    for (const item of quote.items) {
+    for (const item of [...quote.items].sort((a, b) => a.product_id.localeCompare(b.product_id))) {
       await client.query(`
         INSERT INTO order_items (
           order_id, product_id, variant_id, product_name, variant_label,
@@ -338,11 +342,12 @@ export class OrderRepository {
 
       // Trừ tồn kho theo biến thể và đồng bộ tổng tồn kho sản phẩm.
       const productRes = await client.query(
-        `SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE;`,
+        `SELECT stock, variants, active FROM products WHERE id = $1 FOR UPDATE;`,
         [item.product_id],
       );
       if (productRes.rows[0]) {
         const product = productRes.rows[0];
+        if (!product.active) throw new ConflictError('Sản phẩm đã ngừng bán');
         let variants = Array.isArray(product.variants) ? product.variants : [];
         if (typeof product.variants === 'string') {
           try { variants = JSON.parse(product.variants); } catch { variants = []; }
@@ -397,8 +402,6 @@ export class OrderRepository {
     if (quote.removed_cart_item_ids && quote.removed_cart_item_ids.length > 0) {
       await cartRepository.removeItemsByIds(userId, quote.removed_cart_item_ids, client);
     }
-
-    quotesCache.delete(quote_id);
 
     return {
       ...order,
@@ -570,8 +573,9 @@ export class OrderRepository {
   // --- ORD03: Hủy đơn hàng ---
 
   async cancelOrder(userId, orderId, reason = '', client = this.db) {
+    if (client === this.db) return withTransaction(this.db, tx => this.cancelOrder(userId, orderId, reason, tx));
     const existing = await client.query(`
-      SELECT * FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1;
+      SELECT * FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE;
     `, [orderId, userId]);
     if (existing.rows.length === 0) {
       const err = new Error('Không tìm thấy đơn hàng');
@@ -615,6 +619,7 @@ export class OrderRepository {
       JSON.stringify(parsedHistory),
       orderId,
     ]);
+    await client.query("UPDATE payment_sessions SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE order_id=$1 AND status='pending'", [orderId]);
 
     // Hoàn lại tồn kho
     const itemsRes = await client.query(
@@ -922,7 +927,8 @@ export class OrderRepository {
     note,
     expected_updated_at,
   }, actorName = 'Quản trị viên', client = this.db) {
-    const existing = await client.query(`SELECT * FROM orders WHERE id = $1 LIMIT 1;`, [orderId]);
+    if (client === this.db) return withTransaction(this.db, tx => this.updateAdminOrder(orderId, { status, carrier, tracking_number, note, expected_updated_at }, actorName, tx));
+    const existing = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE;`, [orderId]);
     if (existing.rows.length === 0) {
       const err = new Error('Không tìm thấy đơn hàng');
       err.statusCode = 404;

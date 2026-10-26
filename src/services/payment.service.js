@@ -1,97 +1,110 @@
-import PaymentModel from '../models/payment.model.js';
+import billingRepository from "../modules/billing/billing.repository.js";
+import BillingPolicy from "../modules/billing/billing.policy.js";
+import {
+  paymentAmount,
+  transactionReference,
+} from "../modules/billing/billing.validation.js";
+import { BadRequestError, NotFoundError } from "../common/errors/AppError.js";
+
+const statuses = ["pending", "completed", "failed", "refunded"];
 
 class PaymentService {
-  // Lấy danh sách thanh toán
-  static async getAllPayments(filters) {
-    return await PaymentModel.findAll(filters);
+  static getAllPayments(filters) {
+    return billingRepository.findAll(filters);
   }
 
-  // Lấy chi tiết thanh toán theo ID
   static async getPaymentById(id) {
-    const payment = await PaymentModel.findById(id);
-    if (!payment) {
-      const error = new Error('Không tìm thấy bản ghi thanh toán');
-      error.statusCode = 404;
-      throw error;
-    }
+    const payment = await billingRepository.findById(id);
+    if (!payment) throw new NotFoundError("Không tìm thấy bản ghi thanh toán");
     return payment;
   }
 
-  // Lấy danh sách thanh toán theo order_id
-  static async getPaymentsByOrderId(orderId) {
-    return await PaymentModel.findByOrderId(orderId);
+  static getPaymentsByOrderId(orderId) {
+    return billingRepository.findByOrderId(orderId);
   }
 
-  // Tạo thanh toán mới
-  static async createPayment(data) {
-    const { order_id, amount } = data;
-
-    if (!order_id || !order_id.toString().trim()) {
-      const error = new Error('Mã đơn hàng (order_id) không được để trống');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (amount === undefined || amount === null || Number(amount) <= 0) {
-      const error = new Error('Số tiền thanh toán phải lớn hơn 0');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    return await PaymentModel.create({
+  static async createPayment(data, actor) {
+    if (typeof data.order_id !== "string" || !data.order_id.trim())
+      throw new BadRequestError("Mã đơn hàng không hợp lệ");
+    const amount = paymentAmount(data.amount);
+    await billingRepository.getOrder(data.order_id, actor);
+    const staff = BillingPolicy.isStaff(actor);
+    const status = staff ? (data.status ?? "pending") : "pending";
+    if (!statuses.includes(status))
+      throw new BadRequestError("Trạng thái thanh toán không hợp lệ");
+    return billingRepository.create({
       ...data,
-      order_id: order_id.toString().trim(),
-      amount: Number(amount),
+      amount,
+      status,
+      transaction_id: staff ? data.transaction_id : null,
+      user_id: BillingPolicy.resolveCreationUserId(actor, data.user_id),
     });
   }
 
-  // Cập nhật bản ghi thanh toán
-  static async updatePayment(id, updateData) {
-    const existing = await PaymentModel.findById(id);
-    if (!existing) {
-      const error = new Error('Không tìm thấy bản ghi thanh toán để cập nhật');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    if (updateData.amount !== undefined && Number(updateData.amount) <= 0) {
-      const error = new Error('Số tiền thanh toán phải lớn hơn 0');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    return await PaymentModel.update(id, updateData);
+  static async updatePayment(id, data) {
+    await this.getPaymentById(id);
+    const update = { ...data };
+    if (update.amount !== undefined)
+      update.amount = paymentAmount(update.amount);
+    if (update.status !== undefined && !statuses.includes(update.status))
+      throw new BadRequestError("Trạng thái thanh toán không hợp lệ");
+    return billingRepository.update(id, update);
   }
 
-  // Cập nhật trạng thái thanh toán (pending, completed, failed, refunded)
-  static async updatePaymentStatus(id, status) {
-    const validStatuses = ['pending', 'completed', 'failed', 'refunded'];
-    if (!validStatuses.includes(status)) {
-      const error = new Error(`Trạng thái không hợp lệ. Các trạng thái cho phép: ${validStatuses.join(', ')}`);
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const existing = await PaymentModel.findById(id);
-    if (!existing) {
-      const error = new Error('Không tìm thấy bản ghi thanh toán');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return await PaymentModel.update(id, { status });
+  static updatePaymentStatus(id, status) {
+    return this.updatePayment(id, { status });
   }
 
-  // Xóa bản ghi thanh toán
   static async deletePayment(id) {
-    const existing = await PaymentModel.findById(id);
-    if (!existing) {
-      const error = new Error('Không tìm thấy bản ghi thanh toán để xóa');
-      error.statusCode = 404;
-      throw error;
-    }
+    await this.getPaymentById(id);
+    return billingRepository.delete(id);
+  }
 
-    return await PaymentModel.delete(id);
+  static async processWebhook(provider, payload) {
+    if (!payload || Array.isArray(payload) || typeof payload !== "object")
+      throw new BadRequestError("Invalid webhook body");
+    if (!["PAID", "succeeded", "completed", "success"].includes(payload.status))
+      throw new BadRequestError(
+        "Webhook must confirm a successful transaction",
+      );
+    const amount = paymentAmount(payload.amount);
+    const ref = transactionReference(
+      payload.transaction_reference ?? payload.transaction_id,
+    );
+    const reference = transactionReference(provider + ":" + ref);
+    let orderId = payload.order_id || payload.orderId;
+    let kind = "full";
+    let currency = payload.currency;
+    if (payload.payment_id) {
+      const session = (
+        await billingRepository.db.query(
+          "SELECT * FROM payment_sessions WHERE id=$1",
+          [payload.payment_id],
+        )
+      ).rows[0];
+      if (!session) throw new NotFoundError("Payment session not found");
+      if (
+        session.provider !== provider ||
+        Number(session.amount) !== amount ||
+        (orderId && orderId !== session.order_id)
+      )
+        throw new BadRequestError("Webhook does not match payment session");
+      orderId = session.order_id;
+      kind = session.purpose;
+      currency ??= session.currency;
+    }
+    if (typeof orderId !== "string" || !orderId)
+      throw new BadRequestError("Order ID is required");
+    if (typeof currency !== "string" || !currency)
+      throw new BadRequestError("Currency is required");
+    return billingRepository.confirmPayment(orderId, {
+      kind,
+      amount,
+      currency,
+      payment_id: payload.payment_id,
+      transaction_reference: reference,
+      note: "Verified webhook: " + provider,
+    });
   }
 }
 

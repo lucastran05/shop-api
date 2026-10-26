@@ -1,16 +1,16 @@
-import UserModel from '../models/user.model.js';
+import identityRepository from '../modules/identity/identity.repository.js';
 import { hashPassword } from '../utils/password.js';
 import { isValidEmail } from '../validations/auth.validation.js';
 
 class UserService {
   // Lấy danh sách người dùng
   static async getAllUsers(filters) {
-    return await UserModel.findAll(filters);
+    return await identityRepository.findAll(filters);
   }
 
   // Lấy thông tin người dùng theo ID
   static async getUserById(id) {
-    const user = await UserModel.findById(id);
+    const user = await identityRepository.findById(id);
     if (!user) {
       const error = new Error('Không tìm thấy người dùng');
       error.statusCode = 404;
@@ -30,7 +30,7 @@ class UserService {
     const cleanEmail = email.toLowerCase().trim();
 
     // 1. Kiểm tra email đã tồn tại hay chưa
-    const existing = await UserModel.findByEmail(cleanEmail);
+    const existing = await identityRepository.findByEmail(cleanEmail);
     if (existing) {
       const error = new Error('Email đã được sử dụng');
       error.statusCode = 400;
@@ -42,7 +42,7 @@ class UserService {
     const hashedPassword = await hashPassword(rawPassword);
 
     // 3. Tạo trong DB
-    const newUser = await UserModel.create({
+    const newUser = await identityRepository.create({
       name,
       email: cleanEmail,
       password: hashedPassword,
@@ -59,7 +59,7 @@ class UserService {
   // Cập nhật người dùng
   static async updateUser(id, updateData) {
     // Kiểm tra user có tồn tại không
-    const user = await UserModel.findById(id);
+    const user = await identityRepository.findById(id);
     if (!user) {
       const error = new Error('Không tìm thấy người dùng để cập nhật');
       error.statusCode = 404;
@@ -78,7 +78,7 @@ class UserService {
     // Nếu cập nhật email, kiểm tra xem có bị trùng với user khác không
     if (updateData.email && updateData.email !== user.email) {
       const cleanEmail = updateData.email.toLowerCase().trim();
-      const existing = await UserModel.findByEmail(cleanEmail);
+      const existing = await identityRepository.findByEmail(cleanEmail);
       if (existing && existing.id !== id) {
         const error = new Error('Email đã được người dùng khác sử dụng');
         error.statusCode = 400;
@@ -99,13 +99,13 @@ class UserService {
       passwordChanged = true;
     }
 
-    const updatedUser = await UserModel.update(id, fieldsToUpdate);
+    const updatedUser = await identityRepository.update(id, fieldsToUpdate);
 
     // BẢO MẬT PHIÊN ĐĂNG NHẬP:
     // Nếu mật khẩu thay đổi hoặc tài khoản bị vô hiệu hóa (active = false),
     // ngay lập tức thu hồi Refresh Token trong DB để vô hiệu hóa các phiên đăng nhập cũ
     if (passwordChanged || updateData.active === false) {
-      await UserModel.updateRefreshToken(id, null);
+      await identityRepository.updateRefreshToken(id, null);
     }
 
     return updatedUser;
@@ -113,14 +113,14 @@ class UserService {
 
   // Xóa người dùng
   static async deleteUser(id) {
-    const user = await UserModel.findById(id);
+    const user = await identityRepository.findById(id);
     if (!user) {
       const error = new Error('Không tìm thấy người dùng để xóa');
       error.statusCode = 404;
       throw error;
     }
 
-    return await UserModel.delete(id);
+    return await identityRepository.delete(id);
   }
 }
 

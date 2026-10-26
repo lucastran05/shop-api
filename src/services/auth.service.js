@@ -1,4 +1,4 @@
-import UserModel from '../models/user.model.js';
+import identityRepository from '../modules/identity/identity.repository.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import {
   generateAccessToken,
@@ -34,7 +34,7 @@ class AuthService {
     const cleanName = name.trim();
 
     // 1. Kiểm tra email đã tồn tại hay chưa
-    const existingUser = await UserModel.findByEmail(cleanEmail);
+    const existingUser = await identityRepository.findByEmail(cleanEmail);
     if (existingUser) {
       const error = new Error('Email đã được sử dụng');
       error.statusCode = 400;
@@ -45,7 +45,7 @@ class AuthService {
     const hashedPassword = await hashPassword(password);
 
     // 3. Lưu người dùng vào cơ sở dữ liệu (ID là UUID, vai trò mặc định customer)
-    const newUser = await UserModel.create({
+    const newUser = await identityRepository.create({
       name: cleanName,
       email: cleanEmail,
       password: hashedPassword,
@@ -62,7 +62,7 @@ class AuthService {
     const refreshToken = generateRefreshToken(payload);
 
     // 5. Lưu rf_token vào database (model tự động hash SHA-256)
-    await UserModel.updateRefreshToken(newUser.id, refreshToken);
+    await identityRepository.updateRefreshToken(newUser.id, refreshToken);
 
     return {
       user: {
@@ -94,7 +94,7 @@ class AuthService {
     const cleanEmail = email.toLowerCase().trim();
 
     // 1. Tìm người dùng theo email
-    const user = await UserModel.findByEmail(cleanEmail);
+    const user = await identityRepository.findByEmail(cleanEmail);
     if (!user) {
       const error = new Error('Email hoặc mật khẩu không chính xác');
       error.statusCode = 401;
@@ -126,7 +126,7 @@ class AuthService {
     const refreshToken = generateRefreshToken(payload);
 
     // 5. Cập nhật rf_token vào database (model tự động hash SHA-256)
-    await UserModel.updateRefreshToken(user.id, refreshToken);
+    await identityRepository.updateRefreshToken(user.id, refreshToken);
 
     return {
       user: {
@@ -166,14 +166,14 @@ class AuthService {
 
     return await lockManager.acquireAndExecute(tokenHash, async () => {
       // 2. Kiểm tra Refresh Token có khớp trong DB không
-      const user = await UserModel.findByRefreshToken(trimmedToken);
+      const user = await identityRepository.findByRefreshToken(trimmedToken);
       if (!user || user.id !== decoded.id) {
         // PHÁT HIỆN TÁI SỬ DỤNG TOKEN (Token Reuse Detection):
         // Chữ ký JWT hợp lệ và chưa hết hạn, nhưng token này không khớp với token đang lưu trong DB.
         // Điều này báo hiệu token cũ đã được xoay vòng hoặc bị kẻ gian đánh cắp và dùng lại.
         // Ngay lập tức thu hồi phiên làm việc hiện tại của user để bảo vệ tài khoản!
         if (decoded && decoded.id) {
-          await UserModel.updateRefreshToken(decoded.id, null);
+          await identityRepository.updateRefreshToken(decoded.id, null);
         }
         const error = new Error(
           'Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại.'
@@ -184,7 +184,7 @@ class AuthService {
 
       // 3. Kiểm tra trạng thái tài khoản
       if (user.active === false) {
-        await UserModel.updateRefreshToken(user.id, null);
+        await identityRepository.updateRefreshToken(user.id, null);
         const error = new Error('Tài khoản đã bị khóa hoặc vô hiệu hóa');
         error.statusCode = 403;
         throw error;
@@ -200,7 +200,7 @@ class AuthService {
       const newRefreshToken = generateRefreshToken(payload);
 
       // 5. Cập nhật rf_token mới vào DB
-      await UserModel.updateRefreshToken(user.id, newRefreshToken);
+      await identityRepository.updateRefreshToken(user.id, newRefreshToken);
 
       return {
         accessToken: newAccessToken,
@@ -212,13 +212,13 @@ class AuthService {
   // Logic đăng xuất: xóa rf_token trong database
   static async logout(userId) {
     if (!userId) return false;
-    await UserModel.updateRefreshToken(userId, null);
+    await identityRepository.updateRefreshToken(userId, null);
     return true;
   }
 
   // Lấy thông tin tài khoản cá nhân hiện tại
   static async getMe(userId) {
-    const user = await UserModel.findById(userId);
+    const user = await identityRepository.findById(userId);
     if (!user) {
       const error = new Error('Không tìm thấy người dùng');
       error.statusCode = 404;
@@ -246,7 +246,7 @@ class AuthService {
 
   // Cập nhật thông tin cá nhân (name, phone)
   static async updateMe(userId, { name, phone }) {
-    const user = await UserModel.findById(userId);
+    const user = await identityRepository.findById(userId);
     if (!user) {
       const error = new Error('Không tìm thấy người dùng');
       error.statusCode = 404;
@@ -257,7 +257,7 @@ class AuthService {
     if (name && name.trim()) fields.name = name.trim();
     if (phone !== undefined) fields.phone = phone ? phone.trim() : null;
 
-    const updated = await UserModel.update(userId, fields);
+    const updated = await identityRepository.update(userId, fields);
     return {
       id: updated.id,
       name: updated.name,
@@ -291,7 +291,7 @@ class AuthService {
       throw error;
     }
 
-    const userWithPassword = await UserModel.findByEmail((await UserModel.findById(userId))?.email);
+    const userWithPassword = await identityRepository.findByEmail((await identityRepository.findById(userId))?.email);
     if (!userWithPassword) {
       const error = new Error('Không tìm thấy người dùng');
       error.statusCode = 404;
@@ -306,7 +306,7 @@ class AuthService {
     }
 
     const hashed = await hashPassword(new_password);
-    const updated = await UserModel.updatePassword(userId, hashed);
+    const updated = await identityRepository.updatePassword(userId, hashed);
 
     return {
       success: true,

@@ -48,6 +48,8 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your_super_secret_jwt_refresh_key_987654}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      PAYMENT_WEBHOOK_SECRETS: ${PAYMENT_WEBHOOK_SECRETS:-}
+      PAYMENT_WEBHOOK_DEFAULT_PROVIDER: ${PAYMENT_WEBHOOK_DEFAULT_PROVIDER:-vietqr}
     volumes:
       # Gắn kết thư mục src để hỗ trợ hot-reload tức thì khi sửa code
       - ./src:/app/src

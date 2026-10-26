@@ -1,14 +1,14 @@
-import NotificationModel from '../models/notification.model.js';
+import notificationRepository from '../modules/notification/notification.repository.js';
 
 class NotificationService {
   // Lấy danh sách thông báo
   static async getAllNotifications(filters) {
-    return await NotificationModel.findAll(filters);
+    return await notificationRepository.findAll(filters);
   }
 
   // Lấy chi tiết thông báo theo ID
   static async getNotificationById(id) {
-    const notification = await NotificationModel.findById(id);
+    const notification = await notificationRepository.findById(id);
     if (!notification) {
       const error = new Error('Không tìm thấy thông báo');
       error.statusCode = 404;
@@ -34,7 +34,7 @@ class NotificationService {
       throw error;
     }
 
-    return await NotificationModel.create({
+    return await notificationRepository.create({
       ...data,
       title: title.trim(),
       message: message.trim(),
@@ -43,37 +43,37 @@ class NotificationService {
 
   // Đánh dấu thông báo đã đọc
   static async markAsRead(id) {
-    const existing = await NotificationModel.findById(id);
+    const existing = await notificationRepository.findById(id);
     if (!existing) {
       const error = new Error('Không tìm thấy thông báo');
       error.statusCode = 404;
       throw error;
     }
 
-    return await NotificationModel.markAsRead(id);
+    return await notificationRepository.markAsRead(id);
   }
 
   // Đánh dấu tất cả thông báo đã đọc
   static async markAllAsRead({ user_id, owner }) {
-    const updatedCount = await NotificationModel.markAllAsRead({ user_id, owner });
+    const updatedCount = await notificationRepository.markAllAsRead({ user_id, owner });
     return { updatedCount };
   }
 
   // Xóa một thông báo
   static async deleteNotification(id) {
-    const existing = await NotificationModel.findById(id);
+    const existing = await notificationRepository.findById(id);
     if (!existing) {
       const error = new Error('Không tìm thấy thông báo để xóa');
       error.statusCode = 404;
       throw error;
     }
 
-    return await NotificationModel.delete(id);
+    return await notificationRepository.delete(id);
   }
 
   // Xóa tất cả thông báo đã đọc
   static async clearRead({ user_id, owner }) {
-    const deletedCount = await NotificationModel.clearRead({ user_id, owner });
+    const deletedCount = await notificationRepository.clearRead({ user_id, owner });
     return { deletedCount };
   }
 }

@@ -1,4 +1,5 @@
 import pool from '../../config/db.js';
+import { withTransaction } from '../../config/transaction.js';
 
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -101,15 +102,16 @@ export class InventoryRepository {
   }
 
   async adjustInventory({ product_id, variant_id, delta, reason = '', actor_id = null }, client = this.db) {
-    const numDelta = parseInt(delta, 10);
-    if (isNaN(numDelta) || numDelta === 0) {
+    if (client === this.db) return withTransaction(this.db, tx => this.adjustInventory({ product_id, variant_id, delta, reason, actor_id }, tx));
+    const numDelta = Number(delta);
+    if (!Number.isSafeInteger(numDelta) || numDelta === 0) {
       const err = new Error('Số lượng điều chỉnh (delta) không hợp lệ');
       err.statusCode = 400;
       throw err;
     }
 
     // Lấy thông tin sản phẩm và biến thể
-    const pRes = await client.query(`SELECT id, name, stock, variants FROM products WHERE id = $1;`, [product_id]);
+    const pRes = await client.query(`SELECT id, name, stock, variants FROM products WHERE id = $1 FOR UPDATE;`, [product_id]);
     if (pRes.rows.length === 0) {
       const err = new Error('Không tìm thấy sản phẩm');
       err.statusCode = 404;
@@ -139,17 +141,13 @@ export class InventoryRepository {
         parsedVariants[vIndex].stock_quantity = stockAfter;
         parsedVariants[vIndex].stock = stockAfter;
       } else {
-        stockBefore = Number(prod.stock);
-        stockAfter = stockBefore + numDelta;
-        if (stockAfter < 0) {
-          const err = new Error('Số lượng tồn sau điều chỉnh không được nhỏ hơn 0');
-          err.statusCode = 400;
-          throw err;
-        }
+        const err = new Error('Không tìm thấy biến thể');
+        err.statusCode = 404;
+        throw err;
       }
 
       // Tính lại tổng tồn kho sản phẩm
-      const totalStock = parsedVariants.reduce((sum, v) => sum + (Number(v.stock_quantity || v.stock) || 0), 0);
+      const totalStock = parsedVariants.reduce((sum, v) => sum + (Number(v.stock_quantity ?? v.stock) || 0), 0);
       await client.query(`
         UPDATE products
         SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP

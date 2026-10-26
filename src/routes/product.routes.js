@@ -17,15 +17,12 @@ router.get('/:id', ProductController.getById);
 
 // Kiểm tra quyền đánh giá (yêu cầu đăng nhập)
 router.get('/:product_id/reviews/eligibility', verifyAuth, ReviewController.checkEligibility);
-router.get('/:id/reviews/eligibility', verifyAuth, ReviewController.checkEligibility);
 
 // REV01: Xem đánh giá của sản phẩm (công khai, nếu có token thì kèm user_eligibility)
 router.get('/:product_id/reviews', optionalAuth, ReviewController.getReviews);
-router.get('/:id/reviews', optionalAuth, ReviewController.getReviews);
 
 // REV02: Gửi đánh giá cho sản phẩm (yêu cầu đăng nhập và đã nhận hàng thành công)
 router.post('/:product_id/reviews', verifyAuth, ReviewController.createReview);
-router.post('/:id/reviews', verifyAuth, ReviewController.createReview);
 
 // --- Protected Endpoints (Chỉ Quản trị viên và Quản lý mới có quyền chỉnh sửa kho hàng) ---
 // Xóa nhiều sản phẩm theo danh sách ID

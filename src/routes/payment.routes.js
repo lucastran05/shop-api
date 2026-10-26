@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import PaymentController from '../controllers/payment.controller.js';
 import { verifyAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { verifyPaymentWebhook } from '../middlewares/payment-webhook.middleware.js';
 
 const router = Router();
 
 // SYS01: Webhook thanh toán từ cổng thanh toán đối tác (công khai, không yêu cầu Bearer token)
-router.post('/webhooks/:provider', PaymentController.webhook);
+router.post('/webhooks/:provider', verifyPaymentWebhook, PaymentController.webhook);
+router.post('/webhook', verifyPaymentWebhook, PaymentController.webhook);
 
 // PAY02: Theo dõi trạng thái phiên thanh toán (hoặc bản ghi thanh toán)
 router.get('/:id', verifyAuth, PaymentController.getSession);
