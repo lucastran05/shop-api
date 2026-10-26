@@ -8,6 +8,7 @@ import ChatController from '../controllers/chat.controller.js';
 import DashboardController from '../controllers/dashboard.controller.js';
 import UserController from '../controllers/user.controller.js';
 import ShopController from '../controllers/shop.controller.js';
+import VoucherController from '../controllers/voucher.controller.js';
 import { verifyAuth, requireRole } from '../middlewares/auth.middleware.js';
 import { imageUpload } from '../middlewares/upload.middleware.js';
 
@@ -16,6 +17,14 @@ const router = Router();
 // Tất cả các route quản trị đều yêu cầu xác thực và vai trò tối thiểu là manager hoặc admin
 router.use(verifyAuth);
 router.use(requireRole('admin', 'manager'));
+
+// VOUCHERS: quản lý mã giảm giá
+router.get('/vouchers', VoucherController.list);
+router.post('/vouchers', VoucherController.create);
+router.patch('/vouchers/:voucher_id', VoucherController.update);
+router.put('/vouchers/:voucher_id', VoucherController.update);
+router.post('/vouchers/bulk-delete', VoucherController.bulkDelete);
+router.delete('/vouchers/:voucher_id', VoucherController.delete);
 
 // ==========================================
 // 1. DSH01 & REP01: TỔNG QUAN VÀ BÁO CÁO

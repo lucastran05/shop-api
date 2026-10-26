@@ -16,6 +16,7 @@ import paymentRoutes from './payment.routes.js';
 import chatRoutes from './chat.routes.js';
 import shopRoutes from './shop.routes.js';
 import notificationRoutes from './notification.routes.js';
+import voucherRoutes from './voucher.routes.js';
 
 const router = Router();
 
@@ -67,5 +68,8 @@ router.use('/shop', shopRoutes);
 
 // /api/v1/notifications (NOT01, NOT02, NOT03)
 router.use('/notifications', notificationRoutes);
+
+// Vouchers customer có thể kiểm tra trước khi đặt hàng
+router.use('/vouchers', voucherRoutes);
 
 export default router;

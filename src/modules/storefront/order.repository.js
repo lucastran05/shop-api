@@ -2,6 +2,7 @@ import pool from '../../config/db.js';
 import cartRepository from './cart.repository.js';
 import { LOW_STOCK_THRESHOLD } from './inventory.repository.js';
 import { findProvinceByCode, findWardByCode } from '../../constants/locations.js';
+import { voucherRepository } from './voucher.repository.js';
 
 // Lưu quote tạm thời trong bộ nhớ cache
 const quotesCache = new Map();
@@ -161,18 +162,15 @@ export class OrderRepository {
       shippingFee = 0;
     }
 
-    // Tính giảm giá coupon
+    // Tính giảm giá voucher từ dữ liệu quản trị.
     let discountAmount = 0;
-    let couponResult = { code: null, discount_amount: 0 };
+    let couponResult = null;
     if (coupon_code) {
-      const cleanCoupon = coupon_code.trim().toUpperCase();
-      if (cleanCoupon === 'GIAM10' || cleanCoupon === 'SALE10') {
-        discountAmount = Math.round(subtotal * 0.1);
-        couponResult = { code: cleanCoupon, discount_amount: discountAmount };
-      } else if (cleanCoupon === 'FREESHIP') {
-        discountAmount = shippingFee;
-        couponResult = { code: cleanCoupon, discount_amount: discountAmount };
-      }
+      couponResult = await voucherRepository.calculateDiscount(coupon_code, {
+        subtotal,
+        shippingFee,
+      }, client);
+      discountAmount = couponResult.discount_amount;
     }
 
     const totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
@@ -224,7 +222,32 @@ export class OrderRepository {
 
   // --- CHK02: Tạo đơn hàng từ báo giá ---
 
-  async createOrderFromQuote(userId, { quote_id, note: overrideNote, quote_data }, client = this.db) {
+  async createOrderFromQuote(userId, payload, client = this.db) {
+    // Đơn hàng, tồn kho, giỏ hàng và lượt dùng voucher phải cùng một giao dịch.
+    // Nếu một bước thất bại, không để lại đơn dang dở hoặc trừ voucher một phần.
+    if (client === this.db && typeof this.db.connect === 'function') {
+      const transactionClient = await this.db.connect();
+      try {
+        await transactionClient.query('BEGIN');
+        const result = await this.createOrderFromQuote(userId, payload, transactionClient);
+        await transactionClient.query('COMMIT');
+        return result;
+      } catch (error) {
+        try {
+          await transactionClient.query('ROLLBACK');
+        } catch {
+          // Giữ lại lỗi nghiệp vụ ban đầu để middleware trả về đúng mã lỗi.
+        }
+        throw error;
+      } finally {
+        transactionClient.release();
+      }
+    }
+
+    return this._createOrderFromQuote(userId, payload, client);
+  }
+
+  async _createOrderFromQuote(userId, { quote_id, note: overrideNote, quote_data }, client) {
     let quote = quote_id ? quotesCache.get(quote_id) : null;
 
     if (!quote || !quote.items || quote.items.length === 0) {
@@ -330,7 +353,14 @@ export class OrderRepository {
         if (variantIndex >= 0) {
           const variant = variants[variantIndex];
           const before = Number(variant.stock_quantity ?? variant.stock ?? 0);
-          const after = Math.max(0, before - Number(item.quantity));
+          const quantity = Number(item.quantity);
+          if (before < quantity) {
+            const error = new Error(`Sản phẩm ${item.product_name} không còn đủ tồn kho`);
+            error.statusCode = 409;
+            error.code = 'INSUFFICIENT_STOCK';
+            throw error;
+          }
+          const after = before - quantity;
           variants[variantIndex] = {
             ...variant,
             stock_quantity: after,
@@ -345,12 +375,22 @@ export class OrderRepository {
             [totalStock, JSON.stringify(variants), item.product_id],
           );
         } else {
+          if (Number(product.stock) < Number(item.quantity)) {
+            const error = new Error(`Sản phẩm ${item.product_name} không còn đủ tồn kho`);
+            error.statusCode = 409;
+            error.code = 'INSUFFICIENT_STOCK';
+            throw error;
+          }
           await client.query(
             `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2;`,
             [item.quantity, item.product_id],
           );
         }
       }
+    }
+
+    if (quote.coupon?.id) {
+      await voucherRepository.consume(quote.coupon.id, client);
     }
 
     // Xóa các dòng đã đặt khỏi giỏ hàng

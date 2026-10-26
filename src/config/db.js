@@ -208,6 +208,34 @@ export const initDB = async () => {
       );
     `);
 
+    // 7b. Bảng voucher giảm giá
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS vouchers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        discount_type VARCHAR(20) NOT NULL DEFAULT 'percentage',
+        discount_value NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        min_order_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+        max_discount_amount NUMERIC(15, 2),
+        usage_limit INTEGER,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        starts_at TIMESTAMP WITH TIME ZONE,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT vouchers_discount_type_check CHECK (discount_type IN ('percentage', 'fixed', 'free_shipping')),
+        CONSTRAINT vouchers_discount_value_check CHECK (discount_value >= 0),
+        CONSTRAINT vouchers_min_order_check CHECK (min_order_amount >= 0),
+        CONSTRAINT vouchers_usage_check CHECK (usage_limit IS NULL OR usage_limit >= 0),
+        CONSTRAINT vouchers_used_count_check CHECK (used_count >= 0)
+      );
+      CREATE INDEX IF NOT EXISTS idx_vouchers_active_dates ON vouchers(active, starts_at, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code);
+    `);
+
     // 8. Bảng địa chỉ người dùng (user_addresses)
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
