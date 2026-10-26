@@ -145,8 +145,6 @@ npm run dev
 # Hoặc khởi chạy môi trường production:
 npm start
 
-# 4. Chạy kiểm thử tự động (Unit / Integration Tests)
-npm test
 ```
 
 ---
