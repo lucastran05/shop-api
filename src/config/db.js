@@ -235,6 +235,8 @@ export const initDB = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_vouchers_active_dates ON vouchers(active, starts_at, expires_at);
       CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code);
+      ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS audience VARCHAR(20) NOT NULL DEFAULT 'broadcast' CHECK (audience IN ('broadcast', 'selected'));
+      ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS recipient_ids UUID[] NOT NULL DEFAULT '{}';
     `);
 
     // 8. Bảng địa chỉ người dùng (user_addresses)
@@ -433,6 +435,16 @@ export const initDB = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS idempotency_requests (
+        actor_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        operation VARCHAR(50) NOT NULL,
+        request_key VARCHAR(200) NOT NULL,
+        request_hash CHAR(64) NOT NULL,
+        response JSONB NOT NULL,
+        PRIMARY KEY (actor_id, operation, request_key)
+      );
+    `);
     await client.query('CREATE INDEX IF NOT EXISTS idx_payment_confirmations_reference ON payment_confirmations(transaction_reference)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_refunds_reference ON refunds(transaction_reference)');
     await client.query('COMMIT');

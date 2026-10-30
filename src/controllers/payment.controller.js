@@ -169,6 +169,7 @@ class PaymentController {
       const session = await billingRepository.createPaymentSession(order_id, {
         method: method || 'qr',
         purpose: purpose || 'full',
+        idempotency_key: req.get('Idempotency-Key'),
       }, req.user);
 
       return res.status(201).json({
@@ -213,6 +214,7 @@ class PaymentController {
         transaction_reference,
         note,
         confirmed_by: req.user?.id || null,
+        idempotency_key: req.get('Idempotency-Key'),
       });
 
       return res.status(200).json({
@@ -235,6 +237,8 @@ class PaymentController {
         amount,
         reason,
         transaction_reference,
+        refunded_by: req.user.id,
+        idempotency_key: req.get('Idempotency-Key'),
       });
 
       return res.status(200).json({

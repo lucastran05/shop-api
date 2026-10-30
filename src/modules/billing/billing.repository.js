@@ -1,5 +1,6 @@
 import pool from "../../config/db.js";
 import { withTransaction } from "../../config/transaction.js";
+import { withIdempotency } from "../../config/idempotency.js";
 import { randomUUID } from "node:crypto";
 import {
   BadRequestError,
@@ -231,20 +232,21 @@ export class BillingRepository {
 
   async createPaymentSession(
     orderId,
-    { method = "qr", purpose = "full" } = {},
+    { method = "qr", purpose = "full", idempotency_key } = {},
     actor,
     client = this.db,
   ) {
     if (client === this.db)
       return withTransaction(this.db, (tx) =>
-        this.createPaymentSession(orderId, { method, purpose }, actor, tx),
+        withIdempotency(tx, { actorId: actor?.id, key: idempotency_key, operation: 'payment:session', payload: { orderId, method, purpose } },
+          () => this.createPaymentSession(orderId, { method, purpose }, actor, tx)),
       );
     const order = await this.getOrder(orderId, actor, client, true);
     paymentPurpose(purpose);
     if (!["qr", "vietqr", "momo", "card", "bank_transfer"].includes(method))
       throw new BadRequestError("Invalid payment method");
     if (
-      ["cancelled", "refunded"].includes(order.status) ||
+      ["cancelled", "returned", "refunded"].includes(order.status) ||
       order.payment_status === "refunded"
     )
       throw new ConflictError("Order cannot be paid");
@@ -264,23 +266,17 @@ export class BillingRepository {
     const provider = ["qr", "bank_transfer"].includes(method)
       ? "vietqr"
       : method;
-    const qrImageUrl =
-      "https://api.vietqr.io/image/970422-0901234567-compact2.jpg?amount=" +
+    const qrImageUrl = provider === "vietqr" ?
+      "https://img.vietqr.io/image/970422-0901234567-compact2.svg?amount=" +
       amount +
       "&addInfo=" +
-      encodeURIComponent(order.code);
+      encodeURIComponent(order.code) : null;
     // shortcut: payment links are sandbox placeholders; replace with a gateway adapter before accepting real online payments.
-    const paymentUrl =
+    const paymentUrl = method === "card" ?
       "https://sandbox.vnpay.vn/paymentv2/vpcpay.html?orderId=" +
       order.id +
       "&amount=" +
-      amount;
-    const qrPayload =
-      "00020101021238540010A0000007270124000697042201100901234567520460115303704540" +
-      amount +
-      "5802VN62190815" +
-      order.code +
-      "6304";
+      amount : null;
     const result = await client.query(
       "INSERT INTO payment_sessions (order_id, purpose, method, provider, status, amount, currency, qr_payload, qr_image_url, payment_url, expires_at) VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,CURRENT_TIMESTAMP + INTERVAL '15 minutes') RETURNING *",
       [
@@ -290,7 +286,7 @@ export class BillingRepository {
         provider,
         amount,
         order.currency || "VND",
-        qrPayload,
+        null,
         qrImageUrl,
         paymentUrl,
       ],
@@ -335,10 +331,13 @@ export class BillingRepository {
   }
 
   async confirmPayment(orderId, data, client = this.db) {
-    if (client === this.db)
+    if (client === this.db) {
+      const { idempotency_key, ...request } = data;
       return withTransaction(this.db, (tx) =>
-        this.confirmPayment(orderId, data, tx),
+        withIdempotency(tx, { actorId: data.confirmed_by, key: idempotency_key, operation: 'payment:confirm', payload: { orderId, ...request } },
+          () => this.confirmPayment(orderId, request, tx)),
       );
+    }
     const {
       kind = "full",
       amount,
@@ -386,7 +385,7 @@ export class BillingRepository {
       };
     }
     if (
-      ["cancelled", "refunded"].includes(order.status) ||
+      ["cancelled", "returned", "refunded"].includes(order.status) ||
       order.payment_status === "refunded"
     )
       throw new ConflictError("Order cannot be paid");
@@ -482,10 +481,13 @@ export class BillingRepository {
   }
 
   async refundOrder(orderId, data, client = this.db) {
-    if (client === this.db)
+    if (client === this.db) {
+      const { idempotency_key, ...request } = data;
       return withTransaction(this.db, (tx) =>
-        this.refundOrder(orderId, data, tx),
+        withIdempotency(tx, { actorId: data.refunded_by, key: idempotency_key, operation: 'payment:refund', payload: { orderId, ...request } },
+          () => this.refundOrder(orderId, request, tx)),
       );
+    }
     const { amount, reason = "" } = data;
     const ref = transactionReference(
       data.transaction_reference || randomUUID(),
@@ -534,7 +536,7 @@ export class BillingRepository {
       (Math.round(Number(order.refunded_amount) * 100) +
         Math.round(refundAmount * 100)) /
       100;
-    const remaining =
+    const remaining = ["cancelled", "returned", "refunded"].includes(order.status) ? 0 :
       (Math.round(Number(order.total_amount) * 100) -
         Math.round(Number(order.paid_amount) * 100) +
         Math.round(refunded * 100)) /

@@ -1,5 +1,6 @@
 import pool from '../../config/db.js';
 import { withTransaction } from '../../config/transaction.js';
+import { withIdempotency } from '../../config/idempotency.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../common/errors/AppError.js';
 import cartRepository from './cart.repository.js';
 import { LOW_STOCK_THRESHOLD } from './inventory.repository.js';
@@ -12,11 +13,13 @@ const quotesCache = new Map();
 export const ORDER_STATUS_LABELS = {
   pending: 'Chờ xác nhận',
   confirmed: 'Đã xác nhận',
-  processing: 'Đang xử lý',
+  processing: 'Đang chuẩn bị hàng',
+  packed: 'Đã đóng gói',
   shipping: 'Đang giao hàng',
   delivered: 'Giao thành công',
   completed: 'Hoàn thành',
   cancelled: 'Đã hủy',
+  returned: 'Hoàn hàng',
   refunded: 'Đã hoàn tiền',
 };
 
@@ -26,7 +29,7 @@ export const NEXT_STATUS_MAP = {
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   confirmed: [
-    { code: 'processing', label: 'Đóng gói đơn' },
+    { code: 'processing', label: 'Chuẩn bị hàng' },
     { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
@@ -35,11 +38,17 @@ export const NEXT_STATUS_MAP = {
     { code: 'cancelled', label: 'Giao thất bại / Hủy' },
   ],
   processing: [
+    { code: 'packed', label: 'Đóng gói đơn' },
     { code: 'shipping', label: 'Giao hàng' },
     { code: 'delivered', label: 'Giao thành công' },
   ],
-  delivered: [{ code: 'completed', label: 'Hoàn thành' }],
-  completed: [],
+  packed: [
+    { code: 'shipping', label: 'Giao hàng' },
+    { code: 'cancelled', label: 'Hủy đơn' },
+  ],
+  delivered: [{ code: 'completed', label: 'Hoàn thành' }, { code: 'returned', label: 'Hoàn hàng' }],
+  completed: [{ code: 'returned', label: 'Hoàn hàng' }],
+  returned: [],
   cancelled: [],
   refunded: [],
 };
@@ -77,7 +86,7 @@ export class OrderRepository {
     } else if (Array.isArray(directItems) && directItems.length > 0) {
       for (const item of directItems) {
         if (!item || typeof item !== 'object' || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) <= 0) throw new BadRequestError('Số lượng sản phẩm phải là số nguyên dương');
-        const pRes = await client.query(`SELECT id, name, price, stock, variants, image, active FROM products WHERE id = $1;`, [item.product_id]);
+        const pRes = await client.query(`SELECT id, name, price, stock, variants, image, active, allow_deposit, deposit_rate FROM products WHERE id = $1;`, [item.product_id]);
         if (!pRes.rows[0]) throw new NotFoundError('Không tìm thấy sản phẩm');
         if (pRes.rows[0]) {
           const prod = pRes.rows[0];
@@ -88,7 +97,7 @@ export class OrderRepository {
           const matched = parsedVariants.find((v) => String(v.id) === String(item.variant_id)) || parsedVariants[0];
           if (item.variant_id && parsedVariants.length && !parsedVariants.some(v => String(v.id) === String(item.variant_id))) throw new BadRequestError('Biến thể sản phẩm không hợp lệ');
           const unitPrice = matched?.price !== undefined ? Number(matched.price) : Number(prod.price);
-          const stockQty = matched?.stock_quantity !== undefined ? Number(matched.stock_quantity) : Number(prod.stock);
+          const stockQty = Number(matched?.stock_quantity ?? matched?.stock ?? prod.stock);
           const qty = Number(item.quantity);
 
           resolvedItems.push({
@@ -97,7 +106,9 @@ export class OrderRepository {
             product_name: prod.name,
             variant_label: matched?.label || matched?.name || 'Mặc định',
             color: matched?.color || '',
-            image_url: matched?.image || prod.image || '',
+            image_url: matched?.image || '/product-placeholder.svg',
+            allow_deposit: Boolean(prod.allow_deposit),
+            deposit_rate: Number(prod.deposit_rate),
             unit_price: unitPrice,
             quantity: qty,
             line_total: unitPrice * qty,
@@ -182,20 +193,20 @@ export class OrderRepository {
       couponResult = await voucherRepository.calculateDiscount(coupon_code, {
         subtotal,
         shippingFee,
+        userId,
       }, client);
       discountAmount = couponResult.discount_amount;
     }
 
     const totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
 
-    // Tính cọc (mặc định 20% hoặc theo yêu cầu [20, 50, 70])
-    let depositRate = requestedDepositRate !== undefined ? Number(requestedDepositRate) : 20;
-    if (![20, 50, 70].includes(depositRate)) {
-      depositRate = 20;
+    const allowedDepositRates = [50, 70].filter(rate => resolvedItems.every(item => item.allow_deposit && rate >= item.deposit_rate));
+    const depositRate = requestedDepositRate === undefined ? allowedDepositRates[0] : Number(requestedDepositRate);
+    if (payment_mode === 'deposit' && (!allowedDepositRates.includes(depositRate) || payment_method === 'cod')) {
+      throw new BadRequestError('Sản phẩm không hỗ trợ mức cọc hoặc phương thức thanh toán này');
     }
-    const depositAmount = Math.round((totalAmount * depositRate) / 100);
-
-    const amountDueNow = payment_mode === 'deposit' ? depositAmount : totalAmount;
+    const depositAmount = payment_mode === 'deposit' ? Math.round((totalAmount * depositRate) / 100) : 0;
+    const amountDueNow = payment_method === 'cod' ? 0 : payment_mode === 'deposit' ? depositAmount : totalAmount;
 
     const quoteId = `quote_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -208,12 +219,12 @@ export class OrderRepository {
       delivery_method,
       coupon: couponResult,
       allowed_payment_methods: ['cod', 'bank_transfer', 'qr', 'vietqr', 'momo', 'card'],
-      allowed_deposit_rates: [20, 50, 70],
+      allowed_deposit_rates: allowedDepositRates,
       subtotal,
       shipping_fee: shippingFee,
       discount_amount: discountAmount,
       total_amount: totalAmount,
-      deposit_rate: depositRate,
+      deposit_rate: payment_mode === 'deposit' ? depositRate : 0,
       deposit_amount: depositAmount,
       amount_due_now: amountDueNow,
       paid_amount: 0,
@@ -238,7 +249,10 @@ export class OrderRepository {
 
   async createOrderFromQuote(userId, payload, client = this.db) {
     if (client === this.db) {
-      const order = await withTransaction(this.db, tx => this._createOrderFromQuote(userId, payload, tx));
+      const { idempotency_key, ...request } = payload;
+      const order = await withTransaction(this.db, tx => withIdempotency(tx, {
+        actorId: userId, key: idempotency_key, operation: 'order:create', payload: request,
+      }, () => this._createOrderFromQuote(userId, request, tx)));
       quotesCache.delete(payload.quote_id);
       return order;
     }
@@ -282,7 +296,7 @@ export class OrderRepository {
         recipient, shipment, history, note, coupon
       )
       VALUES (
-        $1, $2, 'pending', $3, 'unpaid', 'none',
+        $1, $2, 'pending', $3, 'unpaid', CASE WHEN $5 = 'deposit' THEN 'unpaid' ELSE 'none' END,
         $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
         0, 0, 0, $14, 'VND',
@@ -395,7 +409,7 @@ export class OrderRepository {
     }
 
     if (quote.coupon?.id) {
-      await voucherRepository.consume(quote.coupon.id, client);
+      await voucherRepository.consume(quote.coupon.id, userId, client);
     }
 
     // Xóa các dòng đã đặt khỏi giỏ hàng
@@ -946,7 +960,7 @@ export class OrderRepository {
     let newStatusLabel = ORDER_STATUS_LABELS[newStatus] || newStatus;
 
     let parsedShipment = typeof order.shipment === 'object' ? order.shipment : {};
-    if (['cancelled', 'refunded'].includes(newStatus) &&
+    if (['cancelled', 'returned', 'refunded'].includes(newStatus) &&
         ((carrier !== undefined && String(carrier).trim()) ||
          (tracking_number !== undefined && String(tracking_number).trim()))) {
       const err = new Error('Đơn đã hủy hoặc hoàn tiền không được cập nhật vận đơn');

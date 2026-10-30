@@ -510,7 +510,7 @@ export class CatalogRepository {
     is_active = true,
     deposit = false,
     allow_deposit = false,
-    depositRate = 20,
+    depositRate,
     deposit_rate = 20,
   }, client = this.db) {
     const effectiveOldPrice = oldPrice !== undefined ? oldPrice : old_price;

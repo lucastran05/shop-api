@@ -19,6 +19,19 @@ function normalizeDate(value, field) {
 
 function validatePayload(payload, { partial = false } = {}) {
   const body = { ...payload };
+  body.audience = body.audience ?? 'broadcast';
+  if (!['broadcast', 'selected'].includes(body.audience) ||
+      (body.recipient_ids !== undefined && (!Array.isArray(body.recipient_ids) || body.recipient_ids.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))))) {
+    const error = new Error('Đối tượng áp dụng voucher không hợp lệ');
+    error.statusCode = 400;
+    throw error;
+  }
+  body.recipient_ids = body.audience === 'broadcast' ? [] : [...new Set(body.recipient_ids || [])];
+  if (body.audience === 'selected' && !body.recipient_ids.length) {
+    const error = new Error('Chọn ít nhất một khách hàng cho voucher');
+    error.statusCode = 400;
+    throw error;
+  }
   if (!partial || body.code !== undefined) {
     body.code = normalizeCode(body.code);
     if (!/^[A-Z0-9][A-Z0-9 _-]{1,48}[A-Z0-9]$/.test(body.code)) {
@@ -126,7 +139,7 @@ export class VoucherRepository {
     const result = await client.query(`
       SELECT id, code, name, discount_type, discount_value, min_order_amount,
              max_discount_amount, usage_limit, used_count, starts_at, expires_at,
-             active, created_by, created_at, updated_at
+             active, audience, recipient_ids, created_by, created_at, updated_at
       FROM vouchers
       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
       ORDER BY created_at DESC;
@@ -134,9 +147,10 @@ export class VoucherRepository {
     return result.rows.map(mapVoucher);
   }
 
-  async listAvailable({ subtotal } = {}, client = this.db) {
-    const values = [];
+  async listAvailable({ subtotal, userId } = {}, client = this.db) {
+    const values = [userId || null];
     const conditions = [
+      "(audience = 'broadcast' OR $1::uuid = ANY(recipient_ids))",
       'active = TRUE',
       '(starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP)',
       '(expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)',
@@ -170,12 +184,13 @@ export class VoucherRepository {
 
   async create(payload, actorId, client = this.db) {
     const body = validatePayload(payload);
+    await this.validateRecipients(body.recipient_ids, client);
     try {
       const result = await client.query(`
         INSERT INTO vouchers (
           code, name, discount_type, discount_value, min_order_amount,
-          max_discount_amount, usage_limit, starts_at, expires_at, active, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          max_discount_amount, usage_limit, starts_at, expires_at, active, created_by, audience, recipient_ids
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *;
       `, [
         body.code,
@@ -189,6 +204,8 @@ export class VoucherRepository {
         body.expires_at ?? null,
         body.active ?? true,
         actorId,
+        body.audience,
+        body.recipient_ids,
       ]);
       return mapVoucher(result.rows[0]);
     } catch (error) {
@@ -206,12 +223,13 @@ export class VoucherRepository {
     // Validate the effective record, not just the patch. This prevents an
     // update of discount_value from bypassing the percentage <= 100 rule.
     const body = validatePayload({ ...current, ...payload });
+    await this.validateRecipients(body.recipient_ids, client);
     if (body.usage_limit !== null && body.usage_limit < current.used_count) {
       const error = new Error('Tổng lượt dùng không được nhỏ hơn số lượt đã sử dụng');
       error.statusCode = 400;
       throw error;
     }
-    const fields = ['code', 'name', 'discount_type', 'discount_value', 'min_order_amount', 'max_discount_amount', 'usage_limit', 'starts_at', 'expires_at', 'active'];
+    const fields = ['code', 'name', 'discount_type', 'discount_value', 'min_order_amount', 'max_discount_amount', 'usage_limit', 'starts_at', 'expires_at', 'active', 'audience', 'recipient_ids'];
     const sets = [];
     const values = [];
     for (const field of fields) {
@@ -256,7 +274,17 @@ export class VoucherRepository {
     };
   }
 
-  async calculateDiscount(code, { subtotal, shippingFee = 0 } = {}, client = this.db) {
+  async validateRecipients(ids, client) {
+    if (!ids.length) return;
+    const { rows } = await client.query("SELECT id FROM users WHERE id = ANY($1::uuid[]) AND role = 'customer'", [ids]);
+    if (rows.length !== ids.length) {
+      const error = new Error('Danh sách nhận voucher có khách hàng không hợp lệ');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  async calculateDiscount(code, { subtotal, shippingFee = 0, userId } = {}, client = this.db) {
     const cleanCode = normalizeCode(code);
     if (!cleanCode) return null;
     const result = await client.query(`
@@ -266,8 +294,9 @@ export class VoucherRepository {
         AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP)
         AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
         AND (usage_limit IS NULL OR used_count < usage_limit)
+        AND (audience = 'broadcast' OR $2::uuid = ANY(recipient_ids))
       FOR SHARE;
-    `, [cleanCode]);
+    `, [cleanCode, userId || null]);
     const voucher = result.rows[0];
     if (!voucher) {
       const error = new Error('Voucher không tồn tại, đã hết hạn hoặc đã hết lượt dùng');
@@ -297,15 +326,16 @@ export class VoucherRepository {
     };
   }
 
-  async consume(id, client = this.db) {
+  async consume(id, userId, client = this.db) {
     const result = await client.query(`
       UPDATE vouchers
       SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND active = TRUE AND (usage_limit IS NULL OR used_count < usage_limit)
+        AND (audience = 'broadcast' OR $2::uuid = ANY(recipient_ids))
         AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP)
         AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
       RETURNING id, code, used_count, usage_limit;
-    `, [id]);
+    `, [id, userId || null]);
     if (!result.rows[0]) {
       const error = new Error('Voucher đã hết lượt dùng, vui lòng chọn mã khác');
       error.statusCode = 409;

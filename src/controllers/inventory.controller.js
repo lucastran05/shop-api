@@ -43,6 +43,7 @@ class InventoryController {
         delta,
         reason,
         actor_id: req.user?.id || null,
+        idempotency_key: req.get('Idempotency-Key'),
       });
 
       return res.status(200).json({

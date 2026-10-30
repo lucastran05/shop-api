@@ -13,7 +13,7 @@ class VoucherController {
 
   static async available(req, res, next) {
     try {
-      const vouchers = await voucherRepository.listAvailable({ subtotal: req.query.subtotal });
+      const vouchers = await voucherRepository.listAvailable({ subtotal: req.query.subtotal, userId: req.user.id });
       return res.status(200).json({ status: 'success', data: vouchers });
     } catch (error) {
       next(error);
@@ -65,7 +65,7 @@ class VoucherController {
   static async validate(req, res, next) {
     try {
       const { code, subtotal, shipping_fee } = req.body;
-      const voucher = await voucherRepository.calculateDiscount(code, { subtotal, shippingFee: shipping_fee });
+      const voucher = await voucherRepository.calculateDiscount(code, { subtotal, shippingFee: shipping_fee, userId: req.user.id });
       return res.status(200).json({ status: 'success', data: voucher });
     } catch (error) {
       next(error);

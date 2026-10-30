@@ -20,7 +20,8 @@ export class CartRepository {
 
     const query = `
       SELECT ci.id, ci.product_id, ci.variant_id, ci.quantity, ci.created_at,
-             p.name AS product_name, p.image, p.price, p.stock, p.variants, p.active
+             p.name AS product_name, p.image, p.price, p.stock, p.variants, p.active,
+             p.allow_deposit, p.deposit_rate
       FROM cart_items ci
       JOIN products p ON ci.product_id = p.id
       WHERE ci.cart_id = $1
@@ -59,7 +60,9 @@ export class CartRepository {
         product_name: row.product_name,
         variant_label: matchedVariant?.label || matchedVariant?.name || 'Mặc định',
         color: matchedVariant?.color || '',
-        image_url: matchedVariant?.image || row.image || '',
+        image_url: matchedVariant?.image || '/product-placeholder.svg',
+        allow_deposit: Boolean(row.allow_deposit),
+        deposit_rate: Number(row.deposit_rate),
         unit_price: unitPrice,
         quantity: Number(row.quantity),
         stock_quantity: stockQuantity,

@@ -22,6 +22,7 @@ class CheckoutController {
         quote_id,
         note,
         quote_data: req.body,
+        idempotency_key: req.get('Idempotency-Key'),
       });
 
       return res.status(201).json({

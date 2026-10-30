@@ -1,5 +1,6 @@
 import pool from '../../config/db.js';
 import { withTransaction } from '../../config/transaction.js';
+import { withIdempotency } from '../../config/idempotency.js';
 
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -101,8 +102,10 @@ export class InventoryRepository {
     };
   }
 
-  async adjustInventory({ product_id, variant_id, delta, reason = '', actor_id = null }, client = this.db) {
-    if (client === this.db) return withTransaction(this.db, tx => this.adjustInventory({ product_id, variant_id, delta, reason, actor_id }, tx));
+  async adjustInventory({ product_id, variant_id, delta, reason = '', actor_id = null, idempotency_key }, client = this.db) {
+    if (client === this.db) return withTransaction(this.db, tx => withIdempotency(tx, {
+      actorId: actor_id, key: idempotency_key, operation: 'inventory:adjust', payload: { product_id, variant_id, delta, reason },
+    }, () => this.adjustInventory({ product_id, variant_id, delta, reason, actor_id }, tx)));
     const numDelta = Number(delta);
     if (!Number.isSafeInteger(numDelta) || numDelta === 0) {
       const err = new Error('Số lượng điều chỉnh (delta) không hợp lệ');
