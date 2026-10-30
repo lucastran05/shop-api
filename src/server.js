@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import pool, { initDB } from './config/db.js';
 import { initializeStorage } from './services/upload-storage.js';
+import { attachChatSocket } from './services/chat-socket.js';
 
 // Load biến môi trường từ .env
 dotenv.config();
@@ -25,10 +26,13 @@ const startServer = async () => {
     console.log(`[INFO] Notifications endpoints: http://localhost:${PORT}/api/v1/notifications`);
   });
 
+  const closeChatSocket = attachChatSocket(server);
+
   // Xử lý các lỗi bất thường (Unhandled Rejection)
   process.on('unhandledRejection', (err) => {
     console.error('[ERROR] Unhandled Rejection! Đang đóng server...');
     console.error(err);
+    closeChatSocket();
     server.close(() => {
       process.exit(1);
     });

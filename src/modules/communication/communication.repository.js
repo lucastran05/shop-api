@@ -1,4 +1,5 @@
 import pool from '../../config/db.js';
+import { chatEvents } from './chat-events.js';
 
 export class CommunicationRepository {
   constructor(db = pool) {
@@ -157,7 +158,13 @@ export class CommunicationRepository {
       sender_role,
     ];
 
+    const context = await this.getConversationContext(owner, client);
     const result = await client.query(query, values);
+    const row = result.rows[0];
+    chatEvents.emit('message', {
+      customer: context.user,
+      message: { id: row.id, conversation_id: row.conversationId, content: row.text, sender_role: row.senderRole, sender: { id: row.senderId, name: row.senderName }, is_read: row.isRead, created_at: row.createdAt },
+    });
     return result.rows[0];
   }
 
@@ -194,12 +201,14 @@ export class CommunicationRepository {
   }
 
   async deleteConversation(owner, client = this.db) {
+    const context = await this.getConversationContext(owner, client);
     const query = `
       DELETE FROM chat_messages
-      WHERE owner = $1
+      WHERE owner = ANY($1::text[]) OR conversation_id = ANY($1::text[])
       RETURNING id;
     `;
-    const result = await client.query(query, [owner]);
+    const result = await client.query(query, [context.keys]);
+    if (result.rowCount) chatEvents.emit('removed', { customer: context.user, ids: result.rows.map(row => row.id) });
     return result.rowCount;
   }
 
@@ -312,8 +321,8 @@ export class CommunicationRepository {
   // --- CHAT03 / ADM03: Gửi tin nhắn vào cuộc hội thoại ---
 
   async sendConversationMessage(conversationId, senderUser, { content, client_message_id, sender_role = 'customer' }, client = this.db) {
-    if (!content || !content.trim()) {
-      const err = new Error('Nội dung tin nhắn không được để trống');
+    if (typeof content !== 'string' || !content.trim() || content.length > 2000) {
+      const err = new Error('Nội dung tin nhắn phải có từ 1 đến 2000 ký tự');
       err.statusCode = 400;
       throw err;
     }
@@ -332,7 +341,7 @@ export class CommunicationRepository {
       sender_role, content.trim(),
     ]);
     const row = res.rows[0];
-    return {
+    const result = {
       message: {
         id: row.id,
         conversation_id: row.conversation_id || storedKey,
@@ -345,6 +354,8 @@ export class CommunicationRepository {
       },
       customer: context.user,
     };
+    chatEvents.emit('message', result);
+    return result;
   }
 
   async markConversationAsRead(conversationId, email, client = this.db) {

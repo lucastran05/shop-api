@@ -433,17 +433,17 @@ export class OrderRepository {
   // --- ORD01: Danh sách đơn hàng của khách ---
 
   async getUserOrders(userId, { status, page = 1, limit = 20 } = {}, client = this.db) {
-    const conditions = ['user_id = $1'];
+    const conditions = ['o.user_id = $1'];
     const values = [userId];
 
     if (status && status.trim()) {
       values.push(status.trim());
-      conditions.push(`status = $${values.length}`);
+      conditions.push(`o.status = $${values.length}`);
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    const countQuery = `SELECT COUNT(*)::int AS total FROM orders ${whereClause};`;
+    const countQuery = `SELECT COUNT(*)::int AS total FROM orders o ${whereClause};`;
     const countRes = await client.query(countQuery, values);
     const total = countRes.rows[0]?.total || 0;
 
@@ -457,37 +457,42 @@ export class OrderRepository {
     const offsetIdx = values.length;
 
     const dataQuery = `
-      SELECT id, code, status, status_label, payment_status, deposit_status,
-             deposit_paid_at, total_amount, deposit_amount, paid_amount,
-             refunded_amount, held_amount, remaining_amount, created_at, updated_at
-      FROM orders
+      SELECT o.id, o.code, o.status, o.status_label, o.payment_status, o.deposit_status,
+             o.deposit_paid_at, o.payment_method, o.payment_mode, o.delivery_method,
+             o.subtotal, o.shipping_fee, o.discount_amount,
+             o.total_amount, o.deposit_rate, o.deposit_amount, o.amount_due_now,
+             o.paid_amount, o.refunded_amount, o.held_amount, o.remaining_amount,
+             o.currency, o.recipient, o.shipment, o.history, o.note,
+             o.created_at, o.updated_at,
+             COALESCE((SELECT json_agg(json_build_object(
+               'product_id', oi.product_id, 'variant_id', oi.variant_id,
+               'product_name', oi.product_name, 'variant_label', oi.variant_label,
+               'color', oi.color, 'image_url', oi.image_url,
+               'unit_price', oi.unit_price, 'quantity', oi.quantity,
+               'line_total', oi.line_total
+             )) FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items
+      FROM orders o
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY o.created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx};
     `;
     const dataRes = await client.query(dataQuery, values);
 
-    const orders = [];
-    for (const row of dataRes.rows) {
-      const itemsRes = await client.query(`
-        SELECT product_name, variant_label, image_url, quantity
-        FROM order_items
-        WHERE order_id = $1
-        LIMIT 3;
-      `, [row.id]);
-
-      const countItemRes = await client.query(`
-        SELECT COALESCE(SUM(quantity), 0)::int AS count
-        FROM order_items
-        WHERE order_id = $1;
-      `, [row.id]);
-
+    const orders = dataRes.rows.map((row) => {
+      const items = (Array.isArray(row.items) ? row.items : []).map((i) => ({
+        ...i,
+        unit_price: Number(i.unit_price),
+        line_total: Number(i.line_total),
+      }));
       const allowedActions = [];
       if (['pending', 'confirmed'].includes(row.status)) {
         allowedActions.push('cancel');
       }
+      const parsedRecipient = typeof row.recipient === 'object' ? row.recipient : {};
+      const parsedShipment = typeof row.shipment === 'object' ? row.shipment : {};
+      const parsedHistory = Array.isArray(row.history) ? row.history : [];
 
-      orders.push({
+      return {
         id: row.id,
         code: row.code,
         status: row.status,
@@ -495,19 +500,34 @@ export class OrderRepository {
         payment_status: row.payment_status,
         deposit_status: row.deposit_status,
         deposit_paid_at: row.deposit_paid_at,
+        payment_method: row.payment_method,
+        payment_mode: row.payment_mode,
+        delivery_method: row.delivery_method,
+        subtotal: Number(row.subtotal),
+        shipping_fee: Number(row.shipping_fee),
+        discount_amount: Number(row.discount_amount),
         total_amount: Number(row.total_amount),
+        deposit_rate: Number(row.deposit_rate),
         deposit_amount: Number(row.deposit_amount),
+        amount_due_now: Number(row.amount_due_now),
         paid_amount: Number(row.paid_amount),
         refunded_amount: Number(row.refunded_amount),
         held_amount: Number(row.held_amount),
         remaining_amount: Number(row.remaining_amount),
+        currency: row.currency || 'VND',
+        recipient: parsedRecipient,
+        shipment: parsedShipment,
+        history: parsedHistory,
+        note: row.note || '',
         created_at: row.created_at,
         updated_at: row.updated_at,
-        item_count: countItemRes.rows[0]?.count || 0,
-        items_preview: itemsRes.rows,
+        items,
+        item_count: items.reduce((sum, i) => sum + i.quantity, 0),
+        items_preview: items.slice(0, 3).map(({ product_name, variant_label, image_url, quantity }) =>
+          ({ product_name, variant_label, image_url, quantity })),
         allowed_actions: allowedActions,
-      });
-    }
+      };
+    });
 
     return {
       orders,
@@ -746,12 +766,22 @@ export class OrderRepository {
 
     const dataQuery = `
       SELECT o.id, o.code, o.status, o.status_label, o.payment_status, o.deposit_status,
-             o.deposit_paid_at, o.total_amount, o.deposit_amount, o.paid_amount,
-             o.refunded_amount, o.held_amount, o.remaining_amount, o.created_at, o.updated_at,
-             o.payment_method, o.recipient, o.note,
+             o.deposit_paid_at, o.payment_method, o.payment_mode, o.delivery_method,
+             o.subtotal, o.shipping_fee, o.discount_amount,
+             o.total_amount, o.deposit_rate, o.deposit_amount, o.amount_due_now,
+             o.paid_amount, o.refunded_amount, o.held_amount, o.remaining_amount,
+             o.currency, o.recipient, o.shipment, o.history, o.note,
+             o.created_at, o.updated_at, o.completed_at,
              (SELECT pc.note FROM payment_confirmations pc
               WHERE pc.order_id = o.id ORDER BY pc.confirmed_at DESC LIMIT 1) AS payment_note,
-             u.id AS user_id, u.name AS user_name, u.email AS user_email
+             u.id AS user_id, u.name AS user_name, u.email AS user_email, u.phone AS user_phone,
+             COALESCE((SELECT json_agg(json_build_object(
+               'product_id', oi.product_id, 'variant_id', oi.variant_id,
+               'product_name', oi.product_name, 'variant_label', oi.variant_label,
+               'color', oi.color, 'image_url', oi.image_url,
+               'unit_price', oi.unit_price, 'quantity', oi.quantity,
+               'line_total', oi.line_total
+             )) FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items
       FROM orders o
       LEFT JOIN users u ON o.user_id = u.id
       ${whereClause}
@@ -762,10 +792,18 @@ export class OrderRepository {
 
     const orders = dataRes.rows.map((row) => {
       const parsedRecipient = typeof row.recipient === 'object' ? row.recipient : {};
+      const parsedShipment = typeof row.shipment === 'object' ? row.shipment : {};
+      const parsedHistory = Array.isArray(row.history) ? row.history : [];
+      const items = (Array.isArray(row.items) ? row.items : []).map((i) => ({
+        ...i,
+        unit_price: Number(i.unit_price),
+        line_total: Number(i.line_total),
+      }));
       const allowedActions = [];
       if (NEXT_STATUS_MAP[row.status]?.length) {
         allowedActions.push('update_status');
       }
+      const allowedNext = NEXT_STATUS_MAP[row.status] || [];
 
       return {
         id: row.id,
@@ -775,21 +813,36 @@ export class OrderRepository {
         payment_status: row.payment_status,
         deposit_status: row.deposit_status,
         deposit_paid_at: row.deposit_paid_at,
+        payment_method: row.payment_method,
+        payment_mode: row.payment_mode,
+        delivery_method: row.delivery_method,
+        subtotal: Number(row.subtotal),
+        shipping_fee: Number(row.shipping_fee),
+        discount_amount: Number(row.discount_amount),
         total_amount: Number(row.total_amount),
+        deposit_rate: Number(row.deposit_rate),
         deposit_amount: Number(row.deposit_amount),
+        amount_due_now: Number(row.amount_due_now),
         paid_amount: Number(row.paid_amount),
         refunded_amount: Number(row.refunded_amount),
         held_amount: Number(row.held_amount),
         remaining_amount: Number(row.remaining_amount),
+        currency: row.currency || 'VND',
         created_at: row.created_at,
         updated_at: row.updated_at,
+        completed_at: row.completed_at,
         customer: {
           id: row.user_id || null,
           name: row.user_name || parsedRecipient?.name || 'Khách vãng lai',
           email: row.user_email || 'Chưa cung cấp',
+          phone: row.user_phone || parsedRecipient.phone || '',
         },
+        recipient: parsedRecipient,
         recipient_name: parsedRecipient?.name || row.user_name || 'Khách nhận',
-        payment_method: row.payment_method,
+        items,
+        shipment: parsedShipment,
+        history: parsedHistory,
+        allowed_next_statuses: allowedNext,
         note: row.note || '',
         payment_note: row.payment_note || '',
         allowed_actions: allowedActions,
