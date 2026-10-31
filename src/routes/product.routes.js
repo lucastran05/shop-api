@@ -8,6 +8,7 @@ const router = Router();
 // --- Public Endpoints (Khách hàng có thể xem không cần đăng nhập) ---
 // Lấy danh sách tất cả danh mục sản phẩm (phải đặt trước /:id)
 router.get('/categories', ProductController.getCategories);
+router.get('/featured', ProductController.getFeatured);
 
 // Lấy danh sách sản phẩm (có phân trang, tìm kiếm, lọc theo giá, danh mục, trạng thái)
 router.get('/', ProductController.getAll);

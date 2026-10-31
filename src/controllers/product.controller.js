@@ -3,8 +3,28 @@ import inventoryRepository from "../modules/storefront/inventory.repository.js";
 import { removeStoredImage, storeImage } from "../services/upload-storage.js";
 import { withTransaction } from "../config/transaction.js";
 import pool from "../config/db.js";
+import { getProductPricing } from "../modules/catalog/productPricing.js";
 
 class ProductController {
+  // GET /api/v1/products/featured
+  static async getFeatured(req, res, next) {
+    try {
+      const result = await catalogRepository.findAllCustomer({
+        is_pinned: true,
+        page: Math.max(1, parseInt(req.query.page, 10) || 1),
+        limit: 5,
+      });
+      return res.status(200).json({
+        status: "success",
+        data: result.items,
+        filters: result.filters,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/v1/products (CAT01)
   static async getAll(req, res, next) {
     try {
@@ -171,17 +191,13 @@ class ProductController {
 
       // Tự động tính toán giá và tổng tồn kho từ variants
       let finalPrice = price;
+      let finalOldPrice = null;
       let finalStock = stock;
 
       if (Array.isArray(variants) && variants.length > 0) {
-        const variantPrices = variants.map((v) => Number(v.price) || 0);
-        if (
-          finalPrice === undefined ||
-          finalPrice === null ||
-          finalPrice === 0
-        ) {
-          finalPrice = Math.min(...variantPrices);
-        }
+        const pricing = getProductPricing(variants);
+        finalPrice = pricing.price;
+        finalOldPrice = pricing.old_price;
         if (finalStock === undefined || finalStock === null) {
           finalStock = variants.reduce(
             (sum, v) => sum + (Number(v.stock_quantity || v.stock) || 0),
@@ -204,6 +220,7 @@ class ProductController {
         allow_deposit: allow_deposit !== undefined ? allow_deposit : deposit,
         deposit_rate: deposit_rate || 20,
         price: finalPrice || 0,
+        old_price: finalOldPrice,
         stock: finalStock || 0,
       });
 
@@ -275,6 +292,7 @@ class ProductController {
 
       // Xử lý biến thể & kiểm tra tồn kho
       if (Array.isArray(variants)) {
+        Object.assign(updateFields, getProductPricing(variants));
         updateFields.variants = variants;
         const totalVariantStock = variants.reduce(
           (sum, v) => sum + (Number(v.stock_quantity || v.stock) || 0),

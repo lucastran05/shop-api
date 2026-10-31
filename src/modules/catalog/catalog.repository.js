@@ -196,7 +196,7 @@ export class CatalogRepository {
     else if (sort === 'name_asc') sortClause = 'p.name ASC';
     else if (sort === 'name_desc') sortClause = 'p.name DESC';
 
-    const orderBy = `COALESCE(p.is_pinned, p.featured, FALSE) DESC, ${sortClause}`;
+    const orderBy = `COALESCE(p.is_pinned, p.featured, FALSE) DESC, ${sortClause}, p.id ASC`;
 
     const countQuery = `SELECT COUNT(*) AS total FROM products p ${whereClause};`;
     const countRes = await client.query(countQuery, values);
@@ -497,7 +497,7 @@ export class CatalogRepository {
     category_id = null,
     description = '',
     price = 0,
-    oldPrice = null,
+    oldPrice,
     old_price = null,
     stock = 0,
     image = '',
