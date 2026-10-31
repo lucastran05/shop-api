@@ -29,29 +29,40 @@ export const NEXT_STATUS_MAP = {
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   confirmed: [
+    { code: 'pending', label: 'Về chờ xác nhận' },
     { code: 'processing', label: 'Chuẩn bị hàng' },
-    { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   shipping: [
+    { code: 'packed', label: 'Về đã đóng gói' },
     { code: 'delivered', label: 'Giao thành công' },
-    { code: 'cancelled', label: 'Giao thất bại / Hủy' },
   ],
   processing: [
+    { code: 'confirmed', label: 'Về đã xác nhận' },
     { code: 'packed', label: 'Đóng gói đơn' },
-    { code: 'shipping', label: 'Giao hàng' },
-    { code: 'delivered', label: 'Giao thành công' },
+    { code: 'cancelled', label: 'Hủy đơn' },
   ],
   packed: [
+    { code: 'processing', label: 'Về chuẩn bị hàng' },
     { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
-  delivered: [{ code: 'completed', label: 'Hoàn thành' }, { code: 'returned', label: 'Hoàn hàng' }],
-  completed: [{ code: 'returned', label: 'Hoàn hàng' }],
+  delivered: [{ code: 'shipping', label: 'Về đang giao hàng' }, { code: 'completed', label: 'Hoàn thành' }, { code: 'returned', label: 'Hoàn hàng' }],
+  completed: [{ code: 'delivered', label: 'Về giao thành công' }, { code: 'returned', label: 'Hoàn hàng' }],
   returned: [],
   cancelled: [],
   refunded: [],
 };
+
+function hasBeenShipped(order) {
+  return Boolean(order.shipment?.shipped_at ||
+    ['shipping', 'delivered', 'completed'].includes(order.status) ||
+    (Array.isArray(order.history) && order.history.some(event => event.status === 'shipping')));
+}
+
+function allowedStatuses(order) {
+  return (NEXT_STATUS_MAP[order.status] || []).filter(item => item.code !== 'cancelled' || !hasBeenShipped(order));
+}
 
 export class OrderRepository {
   constructor(db = pool) {
@@ -485,7 +496,7 @@ export class OrderRepository {
         line_total: Number(i.line_total),
       }));
       const allowedActions = [];
-      if (['pending', 'confirmed'].includes(row.status)) {
+      if (['pending', 'confirmed'].includes(row.status) && !hasBeenShipped(row)) {
         allowedActions.push('cancel');
       }
       const parsedRecipient = typeof row.recipient === 'object' ? row.recipient : {};
@@ -559,7 +570,7 @@ export class OrderRepository {
     `, [orderId]);
 
     const allowedActions = [];
-    if (['pending', 'confirmed'].includes(row.status)) {
+    if (['pending', 'confirmed'].includes(row.status) && !hasBeenShipped(row)) {
       allowedActions.push('cancel');
     }
 
@@ -618,7 +629,7 @@ export class OrderRepository {
     }
 
     const order = existing.rows[0];
-    if (!['pending', 'confirmed'].includes(order.status)) {
+    if (!['pending', 'confirmed'].includes(order.status) || hasBeenShipped(order)) {
       const err = new Error(`Không thể hủy đơn hàng ở trạng thái "${order.status_label || order.status}"`);
       err.statusCode = 400;
       throw err;
@@ -803,7 +814,7 @@ export class OrderRepository {
       if (NEXT_STATUS_MAP[row.status]?.length) {
         allowedActions.push('update_status');
       }
-      const allowedNext = NEXT_STATUS_MAP[row.status] || [];
+      const allowedNext = allowedStatuses(row);
 
       return {
         id: row.id,
@@ -931,7 +942,7 @@ export class OrderRepository {
       [orderId],
     );
 
-    const allowedNext = NEXT_STATUS_MAP[row.status] || [];
+    const allowedNext = allowedStatuses(row);
     const allowedActions = allowedNext.length > 0 ? ['change_status', 'update_shipment'] : [];
 
     let parsedRecipient = typeof row.recipient === 'object' ? row.recipient : {};
@@ -1005,10 +1016,16 @@ export class OrderRepository {
     const order = existing.rows[0];
     const nextNote = note === undefined ? (order.note || '') : String(note);
     let newStatus = status || order.status;
-    if (newStatus !== order.status && !NEXT_STATUS_MAP[order.status]?.some((item) => item.code === newStatus)) {
+    if (newStatus !== order.status && !allowedStatuses(order).some((item) => item.code === newStatus)) {
       const err = new Error('Trạng thái đơn hàng không thể chuyển theo quy trình hiện tại');
       err.statusCode = 400;
       throw err;
+    }
+    if (newStatus !== order.status && ['cancelled', 'returned'].includes(newStatus) && !String(note || '').trim()) {
+      throw new BadRequestError('Vui lòng nhập lý do hủy đơn hoặc hoàn hàng');
+    }
+    if (newStatus !== order.status && newStatus === 'completed' && Number(order.paid_amount || 0) < Number(order.total_amount)) {
+      throw new BadRequestError('Cần xác nhận đủ thanh toán trước khi hoàn thành');
     }
     let newStatusLabel = ORDER_STATUS_LABELS[newStatus] || newStatus;
 
@@ -1053,6 +1070,7 @@ export class OrderRepository {
     }
 
     let completedAt = order.completed_at;
+    if (newStatus !== 'completed') completedAt = null;
     if (newStatus === 'completed' && !completedAt) {
       completedAt = new Date().toISOString();
     }
@@ -1095,7 +1113,7 @@ export class OrderRepository {
     }
 
     const updated = res.rows[0];
-    const allowedNext = NEXT_STATUS_MAP[updated.status] || [];
+    const allowedNext = allowedStatuses(updated);
 
     return {
       ...updated,
