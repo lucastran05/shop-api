@@ -31,15 +31,18 @@ export const NEXT_STATUS_MAP = {
   confirmed: [
     { code: 'pending', label: 'Về chờ xác nhận' },
     { code: 'processing', label: 'Chuẩn bị hàng' },
+    { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   shipping: [
     { code: 'packed', label: 'Về đã đóng gói' },
     { code: 'delivered', label: 'Giao thành công' },
+    { code: 'returned', label: 'Hoàn hàng' },
   ],
   processing: [
     { code: 'confirmed', label: 'Về đã xác nhận' },
     { code: 'packed', label: 'Đóng gói đơn' },
+    { code: 'shipping', label: 'Giao hàng' },
     { code: 'cancelled', label: 'Hủy đơn' },
   ],
   packed: [

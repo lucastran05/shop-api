@@ -29,12 +29,14 @@ function fixture(status, overrides = {}) {
   return { update: body => repo.updateAdminOrder(order.id, body, 'Manager', client), writes: () => writes };
 }
 
-test('normal stages permit only one step forward or backward', async () => {
+test('normal stages permit adjacent steps and quick shipment from preparation', async () => {
   for (let from = 0; from < stages.length; from++) {
     const normalNext = NEXT_STATUS_MAP[stages[from]].filter(item => stages.includes(item.code)).map(item => item.code);
-    assert.deepEqual(normalNext.sort(), stages.filter((_, to) => Math.abs(to - from) === 1).sort());
+    const expected = stages.filter((target, to) => Math.abs(to - from) === 1 ||
+      (['confirmed', 'processing'].includes(stages[from]) && target === 'shipping'));
+    assert.deepEqual(normalNext.sort(), expected.sort());
     for (let to = 0; to < stages.length; to++) {
-      if (Math.abs(to - from) <= 1) continue;
+      if (to === from || expected.includes(stages[to])) continue;
       const order = fixture(stages[from]);
       await assert.rejects(order.update({ status: stages[to] }), { statusCode: 400 }, `${stages[from]} -> ${stages[to]}`);
       assert.equal(order.writes(), 0);
@@ -56,10 +58,26 @@ test('a paid order progresses through all stages, retaining shipment and history
 });
 
 test('shipping requires a carrier and tracking number', async () => {
-  for (const body of [{}, { carrier: 'GHN' }, { carrier: ' ', tracking_number: '123' }, { carrier: 'GHN', tracking_number: ' ' }]) {
-    const order = fixture('packed');
-    await assert.rejects(order.update({ status: 'shipping', ...body }), { statusCode: 400 });
-    assert.equal(order.writes(), 0);
+  for (const from of ['confirmed', 'processing', 'packed']) {
+    for (const body of [{}, { carrier: 'GHN' }, { carrier: ' ', tracking_number: '123' }, { carrier: 'GHN', tracking_number: ' ' }]) {
+      const order = fixture(from);
+      await assert.rejects(order.update({ status: 'shipping', ...body }), { statusCode: 400 });
+      assert.equal(order.writes(), 0);
+    }
+  }
+});
+
+test('quick shipment saves shipment and history in one update from every preparation state', async () => {
+  for (const status of ['confirmed', 'processing', 'packed']) {
+    const order = fixture(status);
+    const result = await order.update({ status: 'shipping', carrier: 'GHN', tracking_number: 'ABC123' });
+    assert.equal(result.status, 'shipping');
+    assert.equal(result.shipment.carrier, 'GHN');
+    assert.equal(result.shipment.tracking_number, 'ABC123');
+    assert.ok(result.shipment.shipped_at);
+    assert.equal(result.history.at(-1).status, 'shipping');
+    assert.ok(result.allowed_next_statuses.some(next => next.code === 'returned'));
+    assert.equal(order.writes(), 1);
   }
 });
 
@@ -72,7 +90,7 @@ test('completion requires full recorded payment', async () => {
 });
 
 test('cancellation and returns require a reason and remain terminal for fulfillment', async () => {
-  for (const [from, status] of [['pending', 'cancelled'], ['processing', 'cancelled'], ['packed', 'cancelled'], ['delivered', 'returned'], ['completed', 'returned']]) {
+  for (const [from, status] of [['pending', 'cancelled'], ['processing', 'cancelled'], ['packed', 'cancelled'], ['shipping', 'returned'], ['delivered', 'returned'], ['completed', 'returned']]) {
     const order = fixture(from);
     await assert.rejects(order.update({ status, note: ' ' }), { statusCode: 400 });
     assert.equal(order.writes(), 0);

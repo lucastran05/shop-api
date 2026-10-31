@@ -87,10 +87,12 @@ Theo dõi, lọc tìm đơn hàng, duyệt trạng thái tiến trình, cập nh
 - **Method:** `PATCH`
 - **Path:** `/admin/orders/:id`
 
+Để giao hàng nhanh từ `confirmed`, `processing` hoặc `packed`, gửi `status: "shipping"` cùng `carrier` và `tracking_number` (bắt buộc). Đơn `shipping` có thể chuyển sang `delivered` hoặc `returned`; hoàn hàng yêu cầu `note` có lý do. Cập nhật vận chuyển và trạng thái được lưu trong cùng giao dịch.
+
 #### Request Body
 ```json
 {
-  "status": "shipped",
+  "status": "shipping",
   "carrier": "Giao Hàng Tiết Kiệm (GHTK)",
   "tracking_number": "S2026.GHTK.998811",
   "note": "Đã bàn giao cho shipper lúc 14h00"
@@ -106,7 +108,7 @@ Theo dõi, lọc tìm đơn hàng, duyệt trạng thái tiến trình, cập nh
   "data": {
     "id": "ord-771122",
     "code": "ORD-20261013-001",
-    "status": "shipped",
+    "status": "shipping",
     "status_label": "Đang giao hàng",
     "shipment": {
       "carrier": "Giao Hàng Tiết Kiệm (GHTK)",
@@ -116,7 +118,8 @@ Theo dõi, lọc tìm đơn hàng, duyệt trạng thái tiến trình, cập nh
     },
     "allowed_next_statuses": [
       { "code": "delivered", "label": "Đã giao hàng thành công" },
-      { "code": "cancelled", "label": "Giao thất bại / Hủy đơn" }
+      { "code": "packed", "label": "Về đã đóng gói" },
+      { "code": "returned", "label": "Hoàn hàng" }
     ]
   }
 }
