@@ -1,4 +1,4 @@
-# Backend sau tái cấu trúc — 26/10/2026
+# Cấu trúc backend và nguyên tắc vận hành
 
 ## Luồng xử lý
 
@@ -62,7 +62,3 @@ const signature = createHmac('sha256', secret)
 ```
 
 Webhook không chữ ký, sai chữ ký hoặc quá hạn trả 401. Giao dịch thất bại, sai số tiền/currency trả 400; replay xung đột hoặc phiên hết hạn trả 409. Retry hợp lệ không cộng tiền lần thứ hai.
-
-## Kiểm chứng
-
-Các test tích hợp chạy trên database `shop_rewrite_test_<timestamp>` riêng, tạo và xóa bởi runner tạm. Không gọi initDB trên database ứng dụng trong quá trình kiểm thử. Báo cáo tại thư mục gốc workspace ghi số ca, kết quả, phạm vi và giới hạn. Mã test và runner tạm được xóa sau nghiệm thu theo yêu cầu người dùng.

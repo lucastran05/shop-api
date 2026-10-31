@@ -28,11 +28,6 @@ export const rateLimiter = ({
   message = 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.',
 } = {}) => {
   return (req, res, next) => {
-    // Không áp dụng rate limit khi chạy unit test
-    if (process.env.NODE_ENV === 'test') {
-      return next();
-    }
-
     const ip = req.ip || req.connection?.remoteAddress || '127.0.0.1';
     const key = `${req.baseUrl || ''}${req.path}:${ip}`;
     const now = Date.now();

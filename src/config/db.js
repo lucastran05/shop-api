@@ -12,16 +12,10 @@ if (isProduction && !databaseUrl && (!databasePassword || databasePassword === '
   throw new Error('DB_PASSWORD or DATABASE_URL must be configured with a non-default value in production');
 }
 
-// Phát hiện môi trường test để tối ưu thời gian chờ giải phóng kết nối
-const isTestEnv =
-  process.env.NODE_ENV === 'test' ||
-  process.execArgv.includes('--test') ||
-  process.argv.some((arg) => typeof arg === 'string' && (arg.includes('--test') || arg.includes('.test.js')));
-
 // Cấu hình tối ưu Connection Pool cho PostgreSQL
 const poolConfig = {
   max: Number(process.env.DB_POOL_MAX) || 20,
-  idleTimeoutMillis: isTestEnv ? 500 : (Number(process.env.DB_IDLE_TIMEOUT_MS) || 30000),
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30000,
   connectionTimeoutMillis: Number(process.env.DB_CONN_TIMEOUT_MS) || 5000,
 };
 

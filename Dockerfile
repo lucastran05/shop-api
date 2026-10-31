@@ -20,7 +20,7 @@ FROM base AS dependencies
 
 COPY package*.json ./
 
-# Cài đặt đầy đủ dependencies (bao gồm devDependencies cho development & test)
+# Cài đặt đầy đủ dependencies cần cho phát triển cục bộ
 RUN npm ci
 
 # ------------------------------------------------------------------------------

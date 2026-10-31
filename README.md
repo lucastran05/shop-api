@@ -27,6 +27,8 @@ npm.cmd run dev
 
 ## Source
 
+Đọc source theo luồng của một request: **route** nhận URL → **middleware** kiểm tra quyền → **controller** đọc input và trả response → **service** điều phối nghiệp vụ khi cần → **repository** đọc/ghi PostgreSQL. Các lớp nằm trong `src/`; service không bắt buộc nếu controller có thể gọi repository trực tiếp.
+
 ```text
 src/
 ├── app.js                  # Middleware, routers, public image streaming
@@ -37,8 +39,13 @@ src/
 ├── services/               # Auth, user, shop, chat, notification, payment, upload storage
 ├── modules/                # Identity, catalog, storefront, billing, communication, notification
 ├── middlewares/            # JWT/RBAC, rate limit, multipart, webhook
-└── common/, constants/, utils/, validations/
+├── common/                 # Lỗi, response, logging và interface dùng chung
+├── constants/              # Hằng số và dữ liệu địa giới
+├── utils/                  # JWT và mật khẩu
+└── validations/            # Kiểm tra input
 ```
+
+Khi tìm một API, bắt đầu từ `src/app.js` và `src/routes/index.js`, rồi lần theo route đến controller và repository liên quan. Không cần đọc toàn bộ dự án trước khi sửa một tính năng.
 
 ## Hợp đồng và storage
 

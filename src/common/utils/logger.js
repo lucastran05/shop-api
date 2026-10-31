@@ -5,7 +5,7 @@ const LOG_LEVELS = {
   error: 3,
 };
 
-const CURRENT_LEVEL = process.env.NODE_ENV === 'test' ? 'error' : (process.env.LOG_LEVEL || 'info');
+const CURRENT_LEVEL = process.env.LOG_LEVEL || 'info';
 
 class Logger {
   formatMessage(level, message, context = {}) {

@@ -9,7 +9,7 @@ import orderRoutes from './order.routes.js';
 import conversationRoutes from './conversation.routes.js';
 import uploadRoutes from './upload.routes.js';
 
-// Các module cũ (đảm bảo tương thích kiểm thử và đường dẫn hiện hữu)
+// Các route bổ sung còn được hệ thống sử dụng
 import userRoutes from './user.routes.js';
 import productRoutes from './product.routes.js';
 import paymentRoutes from './payment.routes.js';
@@ -49,7 +49,7 @@ router.use('/conversations', conversationRoutes);
 // REV03 / ADP07: /api/v1/uploads
 router.use('/uploads', uploadRoutes);
 
-// --- 2. Các module hiện hữu (Đảm bảo 100% tương thích test suite) ---
+// --- 2. Các route bổ sung ---
 
 // /api/v1/users
 router.use('/users', userRoutes);
