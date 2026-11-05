@@ -1,6 +1,7 @@
 import identityRepository from '../modules/identity/identity.repository.js';
 import { hashPassword } from '../utils/password.js';
 import { isValidEmail } from '../validations/auth.validation.js';
+import { BadRequestError, NotFoundError } from '../common/errors/AppError.js';
 
 class UserService {
   // Lấy danh sách người dùng
@@ -12,9 +13,7 @@ class UserService {
   static async getUserById(id) {
     const user = await identityRepository.findById(id);
     if (!user) {
-      const error = new Error('Không tìm thấy người dùng');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng');
     }
     return user;
   }
@@ -22,9 +21,7 @@ class UserService {
   // Tạo người dùng mới
   static async createUser({ name, email, password, role, phone, address, avatar, active }) {
     if (!isValidEmail(email)) {
-      const error = new Error('Email không đúng định dạng hợp lệ');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Email không đúng định dạng hợp lệ');
     }
 
     const cleanEmail = email.toLowerCase().trim();
@@ -32,14 +29,11 @@ class UserService {
     // 1. Kiểm tra email đã tồn tại hay chưa
     const existing = await identityRepository.findByEmail(cleanEmail);
     if (existing) {
-      const error = new Error('Email đã được sử dụng');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Email đã được sử dụng');
     }
 
-    // 2. Băm mật khẩu (mặc định '123456' nếu không truyền)
-    const rawPassword = password || '123456';
-    const hashedPassword = await hashPassword(rawPassword);
+    // 2. Băm mật khẩu (controller đã bắt buộc mật khẩu >= 6 ký tự)
+    const hashedPassword = await hashPassword(password);
 
     // 3. Tạo trong DB
     const newUser = await identityRepository.create({
@@ -61,9 +55,7 @@ class UserService {
     // Kiểm tra user có tồn tại không
     const user = await identityRepository.findById(id);
     if (!user) {
-      const error = new Error('Không tìm thấy người dùng để cập nhật');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng để cập nhật');
     }
 
     const fieldsToUpdate = {};
@@ -80,9 +72,7 @@ class UserService {
       const cleanEmail = updateData.email.toLowerCase().trim();
       const existing = await identityRepository.findByEmail(cleanEmail);
       if (existing && existing.id !== id) {
-        const error = new Error('Email đã được người dùng khác sử dụng');
-        error.statusCode = 400;
-        throw error;
+        throw new BadRequestError('Email đã được người dùng khác sử dụng');
       }
       fieldsToUpdate.email = cleanEmail;
     }
@@ -91,9 +81,7 @@ class UserService {
     // Nếu cập nhật mật khẩu, cần băm mật khẩu mới
     if (updateData.password) {
       if (updateData.password.length < 6) {
-        const error = new Error('Mật khẩu mới phải có ít nhất 6 ký tự');
-        error.statusCode = 400;
-        throw error;
+        throw new BadRequestError('Mật khẩu mới phải có ít nhất 6 ký tự');
       }
       fieldsToUpdate.password = await hashPassword(updateData.password);
       passwordChanged = true;
@@ -115,9 +103,7 @@ class UserService {
   static async deleteUser(id) {
     const user = await identityRepository.findById(id);
     if (!user) {
-      const error = new Error('Không tìm thấy người dùng để xóa');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng để xóa');
     }
 
     return await identityRepository.delete(id);

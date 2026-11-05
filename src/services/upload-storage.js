@@ -1,9 +1,8 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import "dotenv/config";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Client } from "minio";
-import { AppError } from "../common/errors/AppError.js";
+import { AppError } from '../common/errors/AppError.js';
 
 const imageExtensions = {
   "image/jpeg": "jpg",
@@ -73,9 +72,7 @@ export function isValidImageBuffer(buffer, mimeType) {
 export async function storeImage(file) {
   const extension = imageExtensions[file.mimetype];
   if (!extension || !isValidImageBuffer(file.buffer, file.mimetype)) {
-    const error = new Error("Nội dung tệp không phải ảnh hợp lệ");
-    error.statusCode = 415;
-    throw error;
+    throw new AppError("Nội dung tệp không phải ảnh hợp lệ", 415);
   }
   const fileName = `${randomUUID()}.${extension}`;
   if (storageDriver() === "minio") {

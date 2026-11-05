@@ -1,8 +1,6 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 import crypto from 'crypto';
-
-dotenv.config();
+import { ForbiddenError, UnauthorizedError } from '../common/errors/AppError.js';
 
 const isProduction = process.env.NODE_ENV === "production";
 const insecurePlaceholders = new Set([
@@ -83,9 +81,7 @@ export const generateRefreshToken = (payload) => {
 export const verifyAccessToken = (token) => {
   const decoded = jwt.verify(token, ACCESS_SECRET);
   if (decoded.token_type && decoded.token_type !== 'access') {
-    const error = new Error('Token không hợp lệ (Không phải là Access Token)');
-    error.statusCode = 401;
-    throw error;
+    throw new UnauthorizedError('Token không hợp lệ (Không phải là Access Token)');
   }
   return decoded;
 };
@@ -97,13 +93,7 @@ export const verifyAccessToken = (token) => {
 export const verifyRefreshToken = (token) => {
   const decoded = jwt.verify(token, REFRESH_SECRET);
   if (decoded.token_type && decoded.token_type !== 'refresh') {
-    const error = new Error('Token không hợp lệ (Không phải là Refresh Token)');
-    error.statusCode = 403;
-    throw error;
+    throw new ForbiddenError('Token không hợp lệ (Không phải là Refresh Token)');
   }
   return decoded;
 };
-
-// Giữ lại tương thích ngược với mã nguồn cũ
-export const generateToken = generateAccessToken;
-export const verifyToken = verifyAccessToken;

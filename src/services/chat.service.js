@@ -1,4 +1,5 @@
 import communicationRepository from '../modules/communication/communication.repository.js';
+import { BadRequestError, NotFoundError } from '../common/errors/AppError.js';
 
 class ChatService {
   // Lấy danh sách hội thoại
@@ -15,9 +16,7 @@ class ChatService {
   static async getMessageById(id) {
     const msg = await communicationRepository.findById(id);
     if (!msg) {
-      const error = new Error('Không tìm thấy tin nhắn');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy tin nhắn');
     }
     return msg;
   }
@@ -28,15 +27,11 @@ class ChatService {
     const { owner } = data;
 
     if (!owner || !owner.trim()) {
-      const error = new Error('Người nhận / chủ hội thoại (owner) không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Người nhận / chủ hội thoại (owner) không được để trống');
     }
 
     if (!content || !content.trim()) {
-      const error = new Error('Nội dung tin nhắn không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Nội dung tin nhắn không được để trống');
     }
 
     const senderRole = data.sender_role || data.from || 'customer';
@@ -55,9 +50,7 @@ class ChatService {
   static async markAsRead(id) {
     const existing = await communicationRepository.findById(id);
     if (!existing) {
-      const error = new Error('Không tìm thấy tin nhắn');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy tin nhắn');
     }
 
     return await communicationRepository.markAsRead(id);
@@ -66,9 +59,7 @@ class ChatService {
   // Đánh dấu tất cả tin nhắn đã đọc
   static async markAllAsRead(owner) {
     if (!owner || !owner.trim()) {
-      const error = new Error('Vui lòng cung cấp thông tin owner');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng cung cấp thông tin owner');
     }
 
     const updatedCount = await communicationRepository.markAllAsRead(owner.trim());
@@ -79,9 +70,7 @@ class ChatService {
   static async deleteMessage(id) {
     const existing = await communicationRepository.findById(id);
     if (!existing) {
-      const error = new Error('Không tìm thấy tin nhắn để xóa');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy tin nhắn để xóa');
     }
 
     return await communicationRepository.delete(id);
@@ -90,9 +79,7 @@ class ChatService {
   // Xóa toàn bộ hội thoại
   static async deleteConversation(owner) {
     if (!owner || !owner.trim()) {
-      const error = new Error('Vui lòng cung cấp thông tin owner');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng cung cấp thông tin owner');
     }
 
     const deletedCount = await communicationRepository.deleteConversation(owner.trim());

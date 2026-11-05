@@ -13,14 +13,11 @@ export class IdentityPolicy {
     return isAdmin || isOwner;
   }
 
+  // Người dùng thường chỉ sửa hồ sơ; đổi mật khẩu phải qua PUT /me/password (có kiểm tra mật khẩu cũ)
   static sanitizeUpdatePayload(currentUser, payload) {
-    const sanitized = { ...payload };
-    const isAdmin = currentUser?.role === 'admin';
-    if (!isAdmin) {
-      delete sanitized.role;
-      delete sanitized.active;
-    }
-    return sanitized;
+    if (currentUser?.role === 'admin') return { ...payload };
+    const { name, phone, address, avatar } = payload;
+    return { name, phone, address, avatar };
   }
 }
 

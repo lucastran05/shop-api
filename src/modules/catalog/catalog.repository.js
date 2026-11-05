@@ -1,4 +1,38 @@
 import pool from '../../config/db.js';
+import { BadRequestError, ForbiddenError } from '../../common/errors/AppError.js';
+import { parseJsonArray } from './productStock.js';
+
+// Query string gửi giá trị dạng chuỗi: '' hoặc thiếu nghĩa là không lọc
+const hasValue = (value) => value !== undefined && value !== null && value !== '';
+const isTrue = (value) => value === true || value === 'true';
+
+const SORTS = {
+  newest: 'p.created_at DESC',
+  oldest: 'p.created_at ASC',
+  price_asc: 'p.price ASC',
+  price_desc: 'p.price DESC',
+  name_asc: 'p.name ASC',
+  name_desc: 'p.name DESC',
+};
+
+// Bộ lọc dùng chung cho danh sách sản phẩm của khách và của quản trị
+function productFilters({ keyword, category_id, is_pinned }) {
+  const conditions = [];
+  const values = [];
+  if (keyword?.trim()) {
+    values.push(`%${keyword.trim().toLowerCase()}%`);
+    conditions.push(`(LOWER(p.name) LIKE $${values.length} OR LOWER(p.description) LIKE $${values.length})`);
+  }
+  if (category_id?.trim()) {
+    values.push(category_id.trim());
+    conditions.push(`(p.category_id::text = $${values.length} OR LOWER(p.category) = LOWER($${values.length}))`);
+  }
+  if (hasValue(is_pinned)) {
+    values.push(isTrue(is_pinned));
+    conditions.push(`(p.is_pinned = $${values.length} OR p.featured = $${values.length})`);
+  }
+  return { conditions, values };
+}
 
 export class CatalogRepository {
   constructor(db = pool) {
@@ -83,9 +117,7 @@ export class CatalogRepository {
       SELECT COUNT(*)::int AS count FROM products WHERE category_id = $1
     `, [id]);
     if (countRes.rows[0]?.count > 0) {
-      const err = new Error('Không thể xóa danh mục đang có sản phẩm');
-      err.statusCode = 400;
-      throw err;
+      throw new BadRequestError('Không thể xóa danh mục đang có sản phẩm');
     }
 
     const query = `
@@ -123,21 +155,6 @@ export class CatalogRepository {
     return { deleted_ids, failed };
   }
 
-  // Lấy mảng danh mục dạng chuỗi (hỗ trợ tương thích ngược)
-  async getCategories(client = this.db) {
-    const cats = await this.findAllCategories(client);
-    if (cats.length > 0) return cats.map((c) => c.name);
-
-    const query = `
-      SELECT DISTINCT category
-      FROM products
-      WHERE category IS NOT NULL AND category != ''
-      ORDER BY category ASC;
-    `;
-    const result = await client.query(query);
-    return result.rows.map((r) => r.category);
-  }
-
   // --- Customer Catalog (CAT01, CAT02) ---
 
   async findAllCustomer({
@@ -152,51 +169,21 @@ export class CatalogRepository {
     limit = 20,
   } = {}, client = this.db) {
     const offset = (Math.max(1, page) - 1) * limit;
-    const conditions = ['(p.active = TRUE)'];
-    const values = [];
-
-    if (keyword && keyword.trim()) {
-      values.push(`%${keyword.trim().toLowerCase()}%`);
-      conditions.push(`(LOWER(p.name) LIKE $${values.length} OR LOWER(p.description) LIKE $${values.length})`);
-    }
-
-    if (category_id && category_id.trim()) {
-      values.push(category_id.trim());
-      conditions.push(`(p.category_id::text = $${values.length} OR LOWER(p.category) = LOWER($${values.length}))`);
-    }
-
-    if (in_stock !== undefined && in_stock !== null && in_stock !== '') {
-      if (in_stock === true || in_stock === 'true') {
-        conditions.push(`p.stock > 0`);
-      }
-    }
-
-    if (is_pinned !== undefined && is_pinned !== null && is_pinned !== '') {
-      values.push(is_pinned === true || is_pinned === 'true');
-      conditions.push(`(p.is_pinned = $${values.length} OR p.featured = $${values.length})`);
-    }
-
-    if (min_price !== undefined && min_price !== null && min_price !== '') {
+    const { conditions, values } = productFilters({ keyword, category_id, is_pinned });
+    conditions.unshift('(p.active = TRUE)');
+    if (isTrue(in_stock)) conditions.push('p.stock > 0');
+    if (hasValue(min_price)) {
       values.push(Number(min_price));
       conditions.push(`p.price >= $${values.length}`);
     }
-
-    if (max_price !== undefined && max_price !== null && max_price !== '') {
+    if (hasValue(max_price)) {
       values.push(Number(max_price));
       conditions.push(`p.price <= $${values.length}`);
     }
-
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    // Order by: ưu tiên pinned lên đầu theo yêu cầu hợp đồng
-    let sortClause = 'p.created_at DESC';
-    if (sort === 'price_asc') sortClause = 'p.price ASC';
-    else if (sort === 'price_desc') sortClause = 'p.price DESC';
-    else if (sort === 'oldest') sortClause = 'p.created_at ASC';
-    else if (sort === 'name_asc') sortClause = 'p.name ASC';
-    else if (sort === 'name_desc') sortClause = 'p.name DESC';
-
-    const orderBy = `COALESCE(p.is_pinned, p.featured, FALSE) DESC, ${sortClause}, p.id ASC`;
+    // Sản phẩm được ghim luôn đứng đầu, sau đó mới theo cách sắp xếp khách chọn
+    const orderBy = `COALESCE(p.is_pinned, p.featured, FALSE) DESC, ${SORTS[sort] || SORTS.newest}, p.id ASC`;
 
     const countQuery = `SELECT COUNT(*) AS total FROM products p ${whereClause};`;
     const countRes = await client.query(countQuery, values);
@@ -263,27 +250,10 @@ export class CatalogRepository {
     limit = 20,
   } = {}, client = this.db) {
     const offset = (Math.max(1, page) - 1) * limit;
-    const conditions = [];
-    const values = [];
-
-    if (keyword && keyword.trim()) {
-      values.push(`%${keyword.trim().toLowerCase()}%`);
-      conditions.push(`(LOWER(p.name) LIKE $${values.length} OR LOWER(p.description) LIKE $${values.length})`);
-    }
-
-    if (category_id && category_id.trim()) {
-      values.push(category_id.trim());
-      conditions.push(`(p.category_id::text = $${values.length} OR LOWER(p.category) = LOWER($${values.length}))`);
-    }
-
-    if (is_active !== undefined && is_active !== null && is_active !== '') {
-      values.push(is_active === true || is_active === 'true');
+    const { conditions, values } = productFilters({ keyword, category_id, is_pinned });
+    if (hasValue(is_active)) {
+      values.push(isTrue(is_active));
       conditions.push(`p.active = $${values.length}`);
-    }
-
-    if (is_pinned !== undefined && is_pinned !== null && is_pinned !== '') {
-      values.push(is_pinned === true || is_pinned === 'true');
-      conditions.push(`(p.is_pinned = $${values.length} OR p.featured = $${values.length})`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -335,90 +305,6 @@ export class CatalogRepository {
     };
   }
 
-  // Hỗ trợ hàm findAll cũ cho các tests hiện có
-  async findAll({
-    page = 1,
-    limit = 20,
-    search = '',
-    category = '',
-    featured,
-    active,
-    minPrice,
-    maxPrice,
-    sort = 'newest',
-  } = {}, client = this.db) {
-    const offset = (Math.max(1, page) - 1) * limit;
-    const conditions = [];
-    const values = [];
-
-    if (search && search.trim()) {
-      values.push(`%${search.trim().toLowerCase()}%`);
-      conditions.push(`(LOWER(name) LIKE $${values.length} OR LOWER(description) LIKE $${values.length})`);
-    }
-
-    if (category && category.trim()) {
-      values.push(category.trim());
-      conditions.push(`(category = $${values.length} OR category_id::text = $${values.length})`);
-    }
-
-    if (featured !== undefined && featured !== null && featured !== '') {
-      values.push(featured === true || featured === 'true');
-      conditions.push(`(featured = $${values.length} OR is_pinned = $${values.length})`);
-    }
-
-    if (active !== undefined && active !== null && active !== '') {
-      values.push(active === true || active === 'true');
-      conditions.push(`active = $${values.length}`);
-    }
-
-    if (minPrice !== undefined && minPrice !== null && minPrice !== '') {
-      values.push(Number(minPrice));
-      conditions.push(`price >= $${values.length}`);
-    }
-
-    if (maxPrice !== undefined && maxPrice !== null && maxPrice !== '') {
-      values.push(Number(maxPrice));
-      conditions.push(`price <= $${values.length}`);
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    let orderBy = 'created_at DESC';
-    if (sort === 'price_asc') orderBy = 'price ASC';
-    else if (sort === 'price_desc') orderBy = 'price DESC';
-    else if (sort === 'oldest') orderBy = 'created_at ASC';
-    else if (sort === 'name_asc') orderBy = 'name ASC';
-    else if (sort === 'name_desc') orderBy = 'name DESC';
-
-    const countQuery = `SELECT COUNT(*) AS total FROM products ${whereClause};`;
-    const countRes = await client.query(countQuery, values);
-    const total = parseInt(countRes.rows[0].total, 10);
-
-    values.push(limit);
-    const limitIndex = values.length;
-    values.push(offset);
-    const offsetIndex = values.length;
-
-    const dataQuery = `
-      SELECT id, name, category, description, price, old_price AS "oldPrice", stock,
-             image, images, variants, attributes, featured, active, deposit,
-             deposit_rate AS "depositRate", created_at AS "createdAt", updated_at AS "updatedAt"
-      FROM products
-      ${whereClause}
-      ORDER BY ${orderBy}
-      LIMIT $${limitIndex} OFFSET $${offsetIndex};
-    `;
-    const dataRes = await client.query(dataQuery, values);
-
-    return {
-      products: dataRes.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit) || 1,
-    };
-  }
-
   // --- Product Detail (CAT02, ADP02) ---
 
   async findById(id, client = this.db) {
@@ -447,23 +333,14 @@ export class CatalogRepository {
     const raw = await this.findById(id, client);
     if (!raw) return null;
 
-    let parsedImages = Array.isArray(raw.images) ? raw.images : [];
-    if (typeof raw.images === 'string') {
-      try { parsedImages = JSON.parse(raw.images); } catch {}
-    }
+    let parsedImages = parseJsonArray(raw.images);
     if (parsedImages.length === 0 && raw.image) {
       parsedImages = [{ id: '1', url: raw.image, alt_text: raw.name, sort_order: 1 }];
     }
 
-    let parsedVariants = Array.isArray(raw.variants) ? raw.variants : [];
-    if (typeof raw.variants === 'string') {
-      try { parsedVariants = JSON.parse(raw.variants); } catch {}
-    }
+    const parsedVariants = parseJsonArray(raw.variants);
 
-    let parsedAttributes = Array.isArray(raw.attributes) ? raw.attributes : [];
-    if (typeof raw.attributes === 'string') {
-      try { parsedAttributes = JSON.parse(raw.attributes); } catch {}
-    }
+    const parsedAttributes = parseJsonArray(raw.attributes);
 
     return {
       id: raw.id,
@@ -491,79 +368,57 @@ export class CatalogRepository {
 
   // --- Create Product (ADP03) ---
 
+  // Controller đã quy đổi alias cũ (featured/active/deposit) sang tên chuẩn trước khi gọi
   async create({
     name,
     category,
     category_id = null,
     description = '',
     price = 0,
-    oldPrice,
     old_price = null,
     stock = 0,
     image = '',
     images = [],
     variants = [],
     attributes = [],
-    featured = false,
     is_pinned = false,
-    active = true,
     is_active = true,
-    deposit = false,
     allow_deposit = false,
-    depositRate,
     deposit_rate = 20,
   }, client = this.db) {
-    const effectiveOldPrice = oldPrice !== undefined ? oldPrice : old_price;
-    const effectiveDepositRate = depositRate !== undefined ? depositRate : deposit_rate;
-    const effectivePinned = is_pinned !== undefined ? is_pinned : featured;
-    const effectiveActive = is_active !== undefined ? is_active : active;
-    const effectiveDeposit = allow_deposit !== undefined ? allow_deposit : deposit;
-
-    // Tìm hoặc tạo category_id nếu chỉ có chuỗi category
-    let finalCategoryId = category_id;
-    let finalCategoryName = category;
-
-    if (finalCategoryId && !finalCategoryName) {
-      const cat = await this.findCategoryById(finalCategoryId, client);
-      if (cat) finalCategoryName = cat.name;
-    } else if (finalCategoryName && !finalCategoryId) {
-      const cat = await this.findCategoryByName(finalCategoryName, client);
-      if (cat) finalCategoryId = cat.id;
+    // Sản phẩm lưu cả tên lẫn id danh mục: có cái nào thì tra ra cái còn lại
+    let categoryId = category_id;
+    let categoryName = category;
+    if (categoryId && !categoryName) {
+      categoryName = (await this.findCategoryById(categoryId, client))?.name;
+    } else if (categoryName && !categoryId) {
+      categoryId = (await this.findCategoryByName(categoryName, client))?.id;
     }
 
-    const query = `
+    const result = await client.query(`
       INSERT INTO products (
         name, category, category_id, description, price, old_price, stock, image, images,
         variants, attributes, featured, is_pinned, active, deposit, allow_deposit, deposit_rate
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      RETURNING id, name, category, category_id, description, price, old_price AS "oldPrice", stock,
-                image, images, variants, attributes, featured, is_pinned, active, deposit, allow_deposit,
-                deposit_rate AS "depositRate", created_at AS "createdAt", updated_at AS "updatedAt",
-                created_at, updated_at;
-    `;
-
-    const values = [
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14, $14, $15)
+      RETURNING id;
+    `, [
       name,
-      finalCategoryName || 'Mặc định',
-      finalCategoryId || null,
+      categoryName || 'Mặc định',
+      categoryId || null,
       description,
       Number(price) || 0,
-      effectiveOldPrice !== null && effectiveOldPrice !== undefined ? Number(effectiveOldPrice) : null,
+      old_price === null || old_price === undefined ? null : Number(old_price),
       Number(stock) || 0,
       image,
       JSON.stringify(images || []),
       JSON.stringify(variants || []),
       JSON.stringify(attributes || []),
-      Boolean(effectivePinned),
-      Boolean(effectivePinned),
-      Boolean(effectiveActive),
-      Boolean(effectiveDeposit),
-      Boolean(effectiveDeposit),
-      Number(effectiveDepositRate) || 20,
-    ];
-
-    const result = await client.query(query, values);
+      Boolean(is_pinned),
+      Boolean(is_active),
+      Boolean(allow_deposit),
+      Number(deposit_rate) || 20,
+    ]);
     return result.rows[0];
   }
 
@@ -593,29 +448,27 @@ export class CatalogRepository {
       deposit_rate: 'deposit_rate',
     };
 
-    const setClauses = [];
-    const values = [];
-
+    // Gom theo cột để alias (vd. active/is_active) không gán trùng một cột trong cùng câu UPDATE
+    const columns = new Map();
     for (const [key, val] of Object.entries(fields)) {
       const col = columnMap[key];
-      if (col && val !== undefined) {
-        let value = val;
-        if (['images', 'variants', 'attributes'].includes(col) && typeof val === 'object') {
-          value = JSON.stringify(val);
-        }
-        values.push(value);
-        setClauses.push(`${col} = $${values.length}`);
-
-        // Đồng bộ đôi cột tương thích
-        if (col === 'is_pinned') {
-          values.push(value);
-          setClauses.push(`featured = $${values.length}`);
-        } else if (col === 'allow_deposit') {
-          values.push(value);
-          setClauses.push(`deposit = $${values.length}`);
-        }
+      if (!col || val === undefined) continue;
+      const value = ['images', 'variants', 'attributes'].includes(col) && typeof val === 'object'
+        ? JSON.stringify(val)
+        : val;
+      columns.set(col, value);
+      // Đồng bộ đôi cột tương thích
+      if (col === 'is_pinned' || col === 'featured') {
+        columns.set('is_pinned', value);
+        columns.set('featured', value);
+      } else if (col === 'allow_deposit' || col === 'deposit') {
+        columns.set('allow_deposit', value);
+        columns.set('deposit', value);
       }
     }
+
+    const values = [...columns.values()];
+    const setClauses = [...columns.keys()].map((col, index) => `${col} = $${index + 1}`);
 
     if (setClauses.length === 0) return await this.findById(id, client);
 
@@ -646,17 +499,6 @@ export class CatalogRepository {
     `;
     const result = await client.query(query, [id]);
     return result.rows[0] || null;
-  }
-
-  async deleteMany(ids = [], client = this.db) {
-    if (!ids || ids.length === 0) return 0;
-    const query = `
-      DELETE FROM products
-      WHERE id = ANY($1::uuid[])
-      RETURNING id;
-    `;
-    const result = await client.query(query, [ids]);
-    return result.rowCount;
   }
 
   async bulkDelete(ids = [], client = this.db) {
@@ -805,10 +647,7 @@ export class CatalogRepository {
     // Chỉ cho phép đánh giá khi khách đã mua hàng và nhận hàng thành công
     const eligibility = await this.checkReviewEligibility(productId, userId, client);
     if (!eligibility.can_review) {
-      const err = new Error(eligibility.message);
-      err.statusCode = 403;
-      err.reason = eligibility.reason;
-      throw err;
+      throw Object.assign(new ForbiddenError(eligibility.message), { reason: eligibility.reason || 'NOT_ELIGIBLE' });
     }
 
     // Resolve image URLs from uploads if image_ids are provided

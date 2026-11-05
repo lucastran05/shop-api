@@ -1,59 +1,47 @@
 import NotificationService from '../services/notification.service.js';
 import NotificationPolicy from '../modules/notification/notification.policy.js';
 import notificationRepository from '../modules/notification/notification.repository.js';
+import { ForbiddenError } from '../common/errors/AppError.js';
+import { asyncHandler } from '../common/utils/asyncHandler.js';
 
 class NotificationController {
   // GET /api/v1/notifications (NOT01)
-  static async getAll(req, res, next) {
-    try {
-      const { user_id, owner, type, unread_only, page, limit } = req.query;
+  static getAll = asyncHandler(async (req, res) => {
+    const { user_id, owner, type, unread_only, page, limit } = req.query;
 
-      const isStaff = NotificationPolicy.isStaff(req.user);
-      const { targetUserId, targetOwner } = NotificationPolicy.resolveTargetRecipient(req.user, { user_id, owner });
+    const isStaff = NotificationPolicy.isStaff(req.user);
+    const { targetUserId, targetOwner } = NotificationPolicy.resolveTargetRecipient(req.user, { user_id, owner });
 
-      const result = await NotificationService.getAllNotifications({
-        user_id: targetUserId,
-        owner: targetOwner,
-        type,
-        unread_only,
-        page: page ? parseInt(page, 10) : 1,
-        limit: limit ? parseInt(limit, 10) : 20,
-        recipientMatch: !isStaff,
-      });
+    const result = await NotificationService.getAllNotifications({
+      user_id: targetUserId,
+      owner: targetOwner,
+      type,
+      unread_only,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+      recipientMatch: !isStaff,
+    });
 
-      const formattedList = result.notifications.map((n) => ({
-        id: n.id,
-        title: n.title,
-        content: n.message || n.text || '',
-        message: n.message || n.text || '',
-        type: n.type || 'system',
-        target_type: n.key || null,
-        target_id: n.params?.target_id || null,
-        is_read: Boolean(n.is_read || n.isRead),
-        created_at: n.created_at || n.createdAt,
-      }));
+    const formattedList = result.notifications.map((n) => ({
+      id: n.id,
+      title: n.title,
+      content: n.message || n.text || '',
+      message: n.message || n.text || '',
+      type: n.type || 'system',
+      target_type: n.key || null,
+      target_id: n.params?.target_id || null,
+      is_read: Boolean(n.is_read || n.isRead),
+      created_at: n.created_at || n.createdAt,
+    }));
 
-      // Nếu gọi không kèm query phân trang (tương thích test cũ), giữ data.notifications
-      if (!page && !limit) {
-        return res.status(200).json({
-          status: 'success',
-          data: {
-            ...result,
-            notifications: formattedList,
-          },
-          unread_count: result.unreadCount,
-          pagination: {
-            page: result.page,
-            limit: result.limit,
-            total: result.total,
-            total_pages: result.totalPages,
-          },
-        });
-      }
-
+    // Nếu gọi không kèm query phân trang (tương thích test cũ), giữ data.notifications
+    if (!page && !limit) {
       return res.status(200).json({
         status: 'success',
-        data: formattedList,
+        data: {
+          ...result,
+          notifications: formattedList,
+        },
         unread_count: result.unreadCount,
         pagination: {
           page: result.page,
@@ -62,132 +50,112 @@ class NotificationController {
           total_pages: result.totalPages,
         },
       });
-    } catch (error) {
-      next(error);
     }
-  }
+
+    return res.status(200).json({
+      status: 'success',
+      data: formattedList,
+      unread_count: result.unreadCount,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        total_pages: result.totalPages,
+      },
+    });
+  });
 
   // GET /api/v1/notifications/:id
-  static async getById(req, res, next) {
-    try {
-      const { id } = req.params;
-      const notification = await NotificationService.getNotificationById(id);
+  static getById = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const notification = await NotificationService.getNotificationById(id);
 
-      if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Bạn không có quyền xem thông báo này',
-        });
-      }
-
-      return res.status(200).json({
-        status: 'success',
-        data: { notification },
-      });
-    } catch (error) {
-      next(error);
+    if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
+      throw new ForbiddenError('Bạn không có quyền xem thông báo này');
     }
-  }
+
+    return res.status(200).json({
+      status: 'success',
+      data: { notification },
+    });
+  });
 
   // POST /api/v1/notifications (Chỉ Admin / Manager)
-  static async create(req, res, next) {
-    try {
-      const payload = {
-        ...req.body,
-        user_id: req.body.user_id || null,
-        owner: req.body.owner || '',
-      };
+  static create = asyncHandler(async (req, res) => {
+    const payload = {
+      ...req.body,
+      user_id: req.body.user_id || null,
+      owner: req.body.owner || '',
+    };
 
-      const notification = await NotificationService.createNotification(payload);
+    const notification = await NotificationService.createNotification(payload);
 
-      return res.status(201).json({
-        status: 'success',
-        message: 'Tạo thông báo thành công',
-        data: { notification },
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.status(201).json({
+      status: 'success',
+      message: 'Tạo thông báo thành công',
+      data: { notification },
+    });
+  });
 
   // PATCH /api/v1/notifications/:id/read (NOT02)
-  static async markAsRead(req, res, next) {
-    try {
-      const { id } = req.params;
-      const result = await notificationRepository.markSingleRead(id, req.user?.id);
+  static markAsRead = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await notificationRepository.markSingleRead(id, req.user?.id);
 
-      return res.status(200).json({
-        status: 'success',
-        message: 'Đã đánh dấu thông báo là đã đọc',
-        data: result.notification,
-        unread_count: result.unread_count,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.status(200).json({
+      status: 'success',
+      message: 'Đã đánh dấu thông báo là đã đọc',
+      data: result.notification,
+      unread_count: result.unread_count,
+    });
+  });
 
   // POST /api/v1/notifications/read-all & PATCH /api/v1/notifications/mark-all-read (NOT03)
-  static async markAllAsRead(req, res, next) {
-    try {
-      const result = await notificationRepository.markAllCustomerRead(req.user?.id);
+  static markAllAsRead = asyncHandler(async (req, res) => {
+    const result = await notificationRepository.markAllCustomerRead(req.user?.id);
 
-      return res.status(200).json({
-        status: 'success',
-        message: 'Đã đánh dấu tất cả thông báo là đã đọc',
-        data: {
-          updated_count: result.updated_count,
-          read_at: result.read_at,
-        },
-        unread_count: result.unread_count,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.status(200).json({
+      status: 'success',
+      message: 'Đã đánh dấu tất cả thông báo là đã đọc',
+      data: {
+        updated_count: result.updated_count,
+        read_at: result.read_at,
+      },
+      unread_count: result.unread_count,
+    });
+  });
 
   // DELETE /api/v1/notifications/:id
-  static async delete(req, res, next) {
-    try {
-      const { id } = req.params;
-      const notification = await NotificationService.getNotificationById(id);
+  static delete = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const notification = await NotificationService.getNotificationById(id);
 
-      if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Bạn không có quyền xóa thông báo này',
-        });
-      }
-
-      await NotificationService.deleteNotification(id);
-
-      return res.status(200).json({
-        status: 'success',
-        message: 'Xóa thông báo thành công',
-      });
-    } catch (error) {
-      next(error);
+    if (!NotificationPolicy.canAccessNotification(req.user, notification)) {
+      throw new ForbiddenError('Bạn không có quyền xóa thông báo này');
     }
-  }
+
+    await NotificationService.deleteNotification(id);
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Xóa thông báo thành công',
+    });
+  });
 
   // DELETE /api/v1/notifications/clear-read
-  static async clearRead(req, res, next) {
-    try {
-      const isStaff = NotificationPolicy.isStaff(req.user);
-      const user_id = isStaff ? (req.body.user_id || req.query.user_id || req.user?.id) : req.user?.id;
-      const owner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
+  static clearRead = asyncHandler(async (req, res) => {
+    const isStaff = NotificationPolicy.isStaff(req.user);
+    const user_id = isStaff ? (req.body.user_id || req.query.user_id || req.user?.id) : req.user?.id;
+    const owner = isStaff ? (req.body.owner || req.query.owner || req.user?.email) : req.user?.email;
 
-      const result = await NotificationService.clearRead({ user_id, owner });
+    const result = await NotificationService.clearRead({ user_id, owner });
 
-      return res.status(200).json({
-        status: 'success',
-        message: `Đã xóa ${result.deletedCount} thông báo đã đọc`,
-        data: result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.status(200).json({
+      status: 'success',
+      message: `Đã xóa ${result.deletedCount} thông báo đã đọc`,
+      data: result,
+    });
+  });
 }
 
 export default NotificationController;

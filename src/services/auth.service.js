@@ -8,26 +8,22 @@ import {
 } from '../utils/jwt.js';
 import { isValidEmail, isValidPassword } from '../validations/auth.validation.js';
 import lockManager from '../common/ports/ILockManager.js';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../common/errors/AppError.js';
+import { toProfileView } from '../modules/identity/userView.js';
 
 class AuthService {
   // Logic đăng ký tài khoản
   static async register({ name, email, password }) {
     if (!name || !name.trim()) {
-      const error = new Error('Vui lòng cung cấp họ và tên');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng cung cấp họ và tên');
     }
 
     if (!isValidEmail(email)) {
-      const error = new Error('Email không đúng định dạng hợp lệ');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Email không đúng định dạng hợp lệ');
     }
 
     if (!isValidPassword(password)) {
-      const error = new Error('Mật khẩu phải có ít nhất 6 ký tự');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Mật khẩu phải có ít nhất 6 ký tự');
     }
 
     const cleanEmail = email.toLowerCase().trim();
@@ -36,9 +32,7 @@ class AuthService {
     // 1. Kiểm tra email đã tồn tại hay chưa
     const existingUser = await identityRepository.findByEmail(cleanEmail);
     if (existingUser) {
-      const error = new Error('Email đã được sử dụng');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Email đã được sử dụng');
     }
 
     // 2. Băm mật khẩu
@@ -80,15 +74,11 @@ class AuthService {
   // Logic đăng nhập
   static async login({ email, password }) {
     if (!email || !password) {
-      const error = new Error('Vui lòng nhập đầy đủ email và mật khẩu');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng nhập đầy đủ email và mật khẩu');
     }
 
     if (!isValidEmail(email)) {
-      const error = new Error('Email hoặc mật khẩu không chính xác');
-      error.statusCode = 401;
-      throw error;
+      throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
     }
 
     const cleanEmail = email.toLowerCase().trim();
@@ -96,24 +86,18 @@ class AuthService {
     // 1. Tìm người dùng theo email
     const user = await identityRepository.findByEmail(cleanEmail);
     if (!user) {
-      const error = new Error('Email hoặc mật khẩu không chính xác');
-      error.statusCode = 401;
-      throw error;
+      throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
     }
 
     // 2. Kiểm tra tài khoản có bị khóa/vô hiệu hóa không
     if (user.active === false) {
-      const error = new Error('Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ quản trị viên.');
-      error.statusCode = 403;
-      throw error;
+      throw new ForbiddenError('Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ quản trị viên.');
     }
 
     // 3. So sánh mật khẩu
     const isPasswordMatch = await comparePassword(password, user.password);
     if (!isPasswordMatch) {
-      const error = new Error('Email hoặc mật khẩu không chính xác');
-      error.statusCode = 401;
-      throw error;
+      throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
     }
 
     // 4. Tạo Access Token và Refresh Token
@@ -144,9 +128,7 @@ class AuthService {
   // Logic cấp mới Access Token từ Refresh Token (Refresh Token Rotation + Reuse Detection + Concurrency Safe)
   static async refreshToken(incomingRefreshToken) {
     if (!incomingRefreshToken || typeof incomingRefreshToken !== 'string') {
-      const error = new Error('Vui lòng cung cấp refreshToken (hoặc rf_token)');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng cung cấp refreshToken (hoặc rf_token)');
     }
 
     const trimmedToken = incomingRefreshToken.trim();
@@ -156,9 +138,7 @@ class AuthService {
     try {
       decoded = verifyRefreshToken(trimmedToken);
     } catch (err) {
-      const error = new Error(err.message || 'Refresh Token không hợp lệ hoặc đã hết hạn');
-      error.statusCode = 403;
-      throw error;
+      throw new ForbiddenError(err.message || 'Refresh Token không hợp lệ hoặc đã hết hạn');
     }
 
     // Xử lý chống race condition khi nhiều request refresh đồng thời (RFC 6819 Concurrency Mitigation)
@@ -175,19 +155,13 @@ class AuthService {
         if (decoded && decoded.id) {
           await identityRepository.updateRefreshToken(decoded.id, null);
         }
-        const error = new Error(
-          'Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại.'
-        );
-        error.statusCode = 403;
-        throw error;
+        throw new ForbiddenError('Cảnh báo bảo mật: Refresh Token không hợp lệ hoặc đã được sử dụng trước đó (nguy cơ bị chiếm đoạt). Toàn bộ phiên làm việc đã bị hủy, vui lòng đăng nhập lại.');
       }
 
       // 3. Kiểm tra trạng thái tài khoản
       if (user.active === false) {
         await identityRepository.updateRefreshToken(user.id, null);
-        const error = new Error('Tài khoản đã bị khóa hoặc vô hiệu hóa');
-        error.statusCode = 403;
-        throw error;
+        throw new ForbiddenError('Tài khoản đã bị khóa hoặc vô hiệu hóa');
       }
 
       // 4. Sinh Access Token mới và Refresh Token mới (Refresh Token Rotation - RTR)
@@ -220,37 +194,21 @@ class AuthService {
   static async getMe(userId) {
     const user = await identityRepository.findById(userId);
     if (!user) {
-      const error = new Error('Không tìm thấy người dùng');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng');
     }
 
     if (user.active === false) {
-      const error = new Error('Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa');
-      error.statusCode = 403;
-      throw error;
+      throw new ForbiddenError('Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa');
     }
 
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone || null,
-      role: user.role,
-      is_active: user.active !== false,
-      default_address_id: user.default_address_id || null,
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-    };
+    return toProfileView(user);
   }
 
   // Cập nhật thông tin cá nhân (name, phone)
   static async updateMe(userId, { name, phone }) {
     const user = await identityRepository.findById(userId);
     if (!user) {
-      const error = new Error('Không tìm thấy người dùng');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng');
     }
 
     const fields = {};
@@ -258,51 +216,31 @@ class AuthService {
     if (phone !== undefined) fields.phone = phone ? phone.trim() : null;
 
     const updated = await identityRepository.update(userId, fields);
-    return {
-      id: updated.id,
-      name: updated.name,
-      email: updated.email,
-      phone: updated.phone || null,
-      role: updated.role,
-      is_active: updated.active !== false,
-      default_address_id: updated.default_address_id || null,
-      created_at: updated.created_at,
-      updated_at: updated.updated_at,
-    };
+    return toProfileView(updated);
   }
 
   // Đổi mật khẩu
   static async changePassword(userId, { current_password, new_password, new_password_confirmation }) {
     if (!current_password || !new_password) {
-      const error = new Error('Vui lòng nhập mật khẩu hiện tại và mật khẩu mới');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Vui lòng nhập mật khẩu hiện tại và mật khẩu mới');
     }
 
     if (new_password.length < 6) {
-      const error = new Error('Mật khẩu mới phải có ít nhất 6 ký tự');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Mật khẩu mới phải có ít nhất 6 ký tự');
     }
 
     if (new_password_confirmation && new_password !== new_password_confirmation) {
-      const error = new Error('Xác nhận mật khẩu mới không khớp');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Xác nhận mật khẩu mới không khớp');
     }
 
     const userWithPassword = await identityRepository.findByEmail((await identityRepository.findById(userId))?.email);
     if (!userWithPassword) {
-      const error = new Error('Không tìm thấy người dùng');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy người dùng');
     }
 
     const isMatch = await comparePassword(current_password, userWithPassword.password);
     if (!isMatch) {
-      const error = new Error('Mật khẩu hiện tại không chính xác');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Mật khẩu hiện tại không chính xác');
     }
 
     const hashed = await hashPassword(new_password);
