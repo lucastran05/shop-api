@@ -1,4 +1,5 @@
 import notificationRepository from '../modules/notification/notification.repository.js';
+import { BadRequestError, NotFoundError } from '../common/errors/AppError.js';
 
 class NotificationService {
   // Lấy danh sách thông báo
@@ -10,9 +11,7 @@ class NotificationService {
   static async getNotificationById(id) {
     const notification = await notificationRepository.findById(id);
     if (!notification) {
-      const error = new Error('Không tìm thấy thông báo');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy thông báo');
     }
     return notification;
   }
@@ -23,15 +22,11 @@ class NotificationService {
     const message = data.message || data.text;
 
     if (!title || !title.trim()) {
-      const error = new Error('Tiêu đề thông báo không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tiêu đề thông báo không được để trống');
     }
 
     if (!message || !message.trim()) {
-      const error = new Error('Nội dung thông báo không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Nội dung thông báo không được để trống');
     }
 
     return await notificationRepository.create({
@@ -41,31 +36,11 @@ class NotificationService {
     });
   }
 
-  // Đánh dấu thông báo đã đọc
-  static async markAsRead(id) {
-    const existing = await notificationRepository.findById(id);
-    if (!existing) {
-      const error = new Error('Không tìm thấy thông báo');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return await notificationRepository.markAsRead(id);
-  }
-
-  // Đánh dấu tất cả thông báo đã đọc
-  static async markAllAsRead({ user_id, owner }) {
-    const updatedCount = await notificationRepository.markAllAsRead({ user_id, owner });
-    return { updatedCount };
-  }
-
   // Xóa một thông báo
   static async deleteNotification(id) {
     const existing = await notificationRepository.findById(id);
     if (!existing) {
-      const error = new Error('Không tìm thấy thông báo để xóa');
-      error.statusCode = 404;
-      throw error;
+      throw new NotFoundError('Không tìm thấy thông báo để xóa');
     }
 
     return await notificationRepository.delete(id);

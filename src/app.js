@@ -66,7 +66,7 @@ app.use('/admin', adminRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // 404 Not Found Handler
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({
     status: 'error',
     message: `Resource not found: ${req.originalUrl}`,

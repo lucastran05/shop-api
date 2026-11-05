@@ -1,11 +1,8 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import app from './app.js';
 import pool, { initDB } from './config/db.js';
 import { initializeStorage } from './services/upload-storage.js';
 import { attachChatSocket } from './services/chat-socket.js';
-
-// Load biến môi trường từ .env
-dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 

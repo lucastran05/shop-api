@@ -1,6 +1,8 @@
 import pool from '../../config/db.js';
 import { withTransaction } from '../../config/transaction.js';
 import { withIdempotency } from '../../config/idempotency.js';
+import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
+import { currentStock, findVariant, lockProduct, parseJsonArray, saveStock, variantStock } from '../catalog/productStock.js';
 
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -25,14 +27,11 @@ export class InventoryRepository {
     let inventoryList = [];
 
     for (const prod of productsRes.rows) {
-      let parsedVariants = Array.isArray(prod.variants) ? prod.variants : [];
-      if (typeof prod.variants === 'string') {
-        try { parsedVariants = JSON.parse(prod.variants); } catch {}
-      }
+      let parsedVariants = parseJsonArray(prod.variants);
 
       if (parsedVariants.length > 0) {
         parsedVariants.forEach((v, idx) => {
-          const vStock = v.stock_quantity !== undefined ? Number(v.stock_quantity) : (v.stock !== undefined ? Number(v.stock) : Number(prod.stock));
+          const vStock = variantStock(v, prod.stock);
           inventoryList.push({
             product_id: prod.id,
             product_name: prod.name,
@@ -108,88 +107,31 @@ export class InventoryRepository {
     }, () => this.adjustInventory({ product_id, variant_id, delta, reason, actor_id }, tx)));
     const numDelta = Number(delta);
     if (!Number.isSafeInteger(numDelta) || numDelta === 0) {
-      const err = new Error('Số lượng điều chỉnh (delta) không hợp lệ');
-      err.statusCode = 400;
-      throw err;
+      throw new BadRequestError('Số lượng điều chỉnh (delta) không hợp lệ');
     }
 
-    // Lấy thông tin sản phẩm và biến thể
-    const pRes = await client.query(`SELECT id, name, stock, variants FROM products WHERE id = $1 FOR UPDATE;`, [product_id]);
-    if (pRes.rows.length === 0) {
-      const err = new Error('Không tìm thấy sản phẩm');
-      err.statusCode = 404;
-      throw err;
+    const product = await lockProduct(client, product_id);
+    if (!product) throw new NotFoundError('Không tìm thấy sản phẩm');
+    if (product.variants.length > 0 && !findVariant(product.variants, variant_id)) {
+      throw new NotFoundError('Không tìm thấy biến thể');
     }
 
-    const prod = pRes.rows[0];
-    let parsedVariants = Array.isArray(prod.variants) ? prod.variants : [];
-    if (typeof prod.variants === 'string') {
-      try { parsedVariants = JSON.parse(prod.variants); } catch {}
+    const stockBefore = currentStock(product, variant_id);
+    const stockAfter = stockBefore + numDelta;
+    if (stockAfter < 0) {
+      throw new BadRequestError('Số lượng tồn sau điều chỉnh không được nhỏ hơn 0');
     }
+    await saveStock(client, product, variant_id, stockAfter);
 
-    let stockBefore = 0;
-    let stockAfter = 0;
-
-    if (parsedVariants.length > 0) {
-      const vIndex = parsedVariants.findIndex((v) => String(v.id) === String(variant_id));
-      if (vIndex !== -1) {
-        const v = parsedVariants[vIndex];
-        stockBefore = v.stock_quantity !== undefined ? Number(v.stock_quantity) : (v.stock !== undefined ? Number(v.stock) : Number(prod.stock));
-        stockAfter = stockBefore + numDelta;
-        if (stockAfter < 0) {
-          const err = new Error('Số lượng tồn sau điều chỉnh không được nhỏ hơn 0');
-          err.statusCode = 400;
-          throw err;
-        }
-        parsedVariants[vIndex].stock_quantity = stockAfter;
-        parsedVariants[vIndex].stock = stockAfter;
-      } else {
-        const err = new Error('Không tìm thấy biến thể');
-        err.statusCode = 404;
-        throw err;
-      }
-
-      // Tính lại tổng tồn kho sản phẩm
-      const totalStock = parsedVariants.reduce((sum, v) => sum + (Number(v.stock_quantity ?? v.stock) || 0), 0);
-      await client.query(`
-        UPDATE products
-        SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3;
-      `, [totalStock, JSON.stringify(parsedVariants), product_id]);
-    } else {
-      stockBefore = Number(prod.stock);
-      stockAfter = stockBefore + numDelta;
-      if (stockAfter < 0) {
-        const err = new Error('Số lượng tồn sau điều chỉnh không được nhỏ hơn 0');
-        err.statusCode = 400;
-        throw err;
-      }
-
-      await client.query(`
-        UPDATE products
-        SET stock = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2;
-      `, [stockAfter, product_id]);
-    }
-
-    // Ghi nhật ký vào bảng inventory_adjustments
-    const adjQuery = `
-      INSERT INTO inventory_adjustments (
-        product_id, variant_id, delta, stock_before, stock_after, reason, actor_id
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id, product_id, variant_id, delta, stock_before, stock_after, reason, actor_id, created_at;
-    `;
-    const adjRes = await client.query(adjQuery, [
+    const adj = await this.recordAdjustment({
       product_id,
-      variant_id || 'default',
-      numDelta,
-      stockBefore,
-      stockAfter,
-      reason || 'Điều chỉnh thủ công',
-      actor_id || null,
-    ]);
-    const adj = adjRes.rows[0];
+      variant_id,
+      delta: numDelta,
+      stock_before: stockBefore,
+      stock_after: stockAfter,
+      reason,
+      actor_id,
+    }, client);
 
     // Lấy thông tin actor
     let actor = { id: actor_id, name: 'Quản trị viên' };
@@ -209,6 +151,26 @@ export class InventoryRepository {
       actor,
       created_at: adj.created_at,
     };
+  }
+
+  // Ghi nhật ký vào bảng inventory_adjustments
+  async recordAdjustment({ product_id, variant_id, delta, stock_before, stock_after, reason, actor_id }, client = this.db) {
+    const result = await client.query(`
+      INSERT INTO inventory_adjustments (
+        product_id, variant_id, delta, stock_before, stock_after, reason, actor_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, product_id, variant_id, delta, stock_before, stock_after, reason, actor_id, created_at;
+    `, [
+      product_id,
+      variant_id || 'default',
+      delta,
+      stock_before,
+      stock_after,
+      reason || 'Điều chỉnh thủ công',
+      actor_id || null,
+    ]);
+    return result.rows[0];
   }
 
   async getAdjustments({
@@ -260,10 +222,7 @@ export class InventoryRepository {
     const dataRes = await client.query(dataQuery, values);
 
     const items = dataRes.rows.map((row) => {
-      let parsedVariants = Array.isArray(row.variants) ? row.variants : [];
-      if (typeof row.variants === 'string') {
-        try { parsedVariants = JSON.parse(row.variants); } catch {}
-      }
+      const parsedVariants = parseJsonArray(row.variants);
       const matched = parsedVariants.find((v) => String(v.id) === String(row.variant_id));
 
       return {

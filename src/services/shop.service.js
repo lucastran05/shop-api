@@ -1,4 +1,5 @@
 import storefrontRepository from '../modules/storefront/storefront.repository.js';
+import { BadRequestError } from '../common/errors/AppError.js';
 
 class ShopService {
   // Lấy thông tin cửa hàng (tạo bản ghi mặc định nếu chưa tồn tại)
@@ -13,9 +14,7 @@ class ShopService {
   // Cập nhật thông tin cửa hàng
   static async updateShopInfo(updateData) {
     if (updateData.name !== undefined && !updateData.name.trim()) {
-      const error = new Error('Tên cửa hàng không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tên cửa hàng không được để trống');
     }
 
     const updated = await storefrontRepository.update(updateData);
@@ -25,9 +24,7 @@ class ShopService {
   // Tạo hoặc ghi đè thông tin cửa hàng
   static async createShopInfo(data) {
     if (!data.name || !data.name.trim()) {
-      const error = new Error('Tên cửa hàng không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tên cửa hàng không được để trống');
     }
 
     const created = await storefrontRepository.update(data);

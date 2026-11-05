@@ -1,4 +1,6 @@
 import pool from '../../config/db.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import { parseJsonArray, variantStock } from '../catalog/productStock.js';
 
 export class CartRepository {
   constructor(db = pool) {
@@ -34,18 +36,13 @@ export class CartRepository {
     let totalItems = 0;
 
     for (const row of result.rows) {
-      let parsedVariants = Array.isArray(row.variants) ? row.variants : [];
-      if (typeof row.variants === 'string') {
-        try { parsedVariants = JSON.parse(row.variants); } catch {}
-      }
+      let parsedVariants = parseJsonArray(row.variants);
 
       // Tìm biến thể tương ứng
       const matchedVariant = parsedVariants.find((v) => String(v.id) === String(row.variant_id)) || parsedVariants[0] || null;
 
       const unitPrice = matchedVariant?.price !== undefined ? Number(matchedVariant.price) : Number(row.price);
-      const stockQuantity = matchedVariant?.stock_quantity !== undefined
-        ? Number(matchedVariant.stock_quantity)
-        : (matchedVariant?.stock !== undefined ? Number(matchedVariant.stock) : Number(row.stock));
+      const stockQuantity = variantStock(matchedVariant, row.stock);
 
       const lineTotal = unitPrice * Number(row.quantity);
       const isAvailable = Boolean(row.active) && stockQuantity >= Number(row.quantity);
@@ -89,16 +86,11 @@ export class CartRepository {
     // Kiểm tra sản phẩm và biến thể
     const pRes = await client.query(`SELECT id, name, price, stock, variants, active FROM products WHERE id = $1;`, [product_id]);
     if (pRes.rows.length === 0) {
-      const err = new Error('Không tìm thấy sản phẩm');
-      err.statusCode = 404;
-      throw err;
+      throw new NotFoundError('Không tìm thấy sản phẩm');
     }
 
     const prod = pRes.rows[0];
-    let parsedVariants = Array.isArray(prod.variants) ? prod.variants : [];
-    if (typeof prod.variants === 'string') {
-      try { parsedVariants = JSON.parse(prod.variants); } catch {}
-    }
+    const parsedVariants = parseJsonArray(prod.variants);
 
     const matchedVariant = parsedVariants.find((v) => String(v.id) === String(variant_id)) || parsedVariants[0];
     const targetVariantId = matchedVariant?.id ? String(matchedVariant.id) : (variant_id || 'default');
@@ -135,9 +127,7 @@ export class CartRepository {
         UPDATE cart_items SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND cart_id = $3 RETURNING id;
       `, [qty, itemId, cart.id]);
       if (updated.rows.length === 0) {
-        const err = new Error('Không tìm thấy sản phẩm trong giỏ');
-        err.statusCode = 404;
-        throw err;
+        throw new NotFoundError('Không tìm thấy sản phẩm trong giỏ');
       }
     }
 

@@ -1,4 +1,5 @@
 import pool from '../../config/db.js';
+import { BadRequestError, ConflictError } from '../../common/errors/AppError.js';
 
 const DISCOUNT_TYPES = new Set(['percentage', 'fixed', 'free_shipping']);
 
@@ -10,9 +11,7 @@ function normalizeDate(value, field) {
   if (value === undefined || value === null || value === '') return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    const error = new Error(`${field} không hợp lệ`);
-    error.statusCode = 400;
-    throw error;
+    throw new BadRequestError(`${field} không hợp lệ`);
   }
   return date.toISOString();
 }
@@ -22,66 +21,48 @@ function validatePayload(payload, { partial = false } = {}) {
   body.audience = body.audience ?? 'broadcast';
   if (!['broadcast', 'selected'].includes(body.audience) ||
       (body.recipient_ids !== undefined && (!Array.isArray(body.recipient_ids) || body.recipient_ids.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))))) {
-    const error = new Error('Đối tượng áp dụng voucher không hợp lệ');
-    error.statusCode = 400;
-    throw error;
+    throw new BadRequestError('Đối tượng áp dụng voucher không hợp lệ');
   }
   body.recipient_ids = body.audience === 'broadcast' ? [] : [...new Set(body.recipient_ids || [])];
   if (body.audience === 'selected' && !body.recipient_ids.length) {
-    const error = new Error('Chọn ít nhất một khách hàng cho voucher');
-    error.statusCode = 400;
-    throw error;
+    throw new BadRequestError('Chọn ít nhất một khách hàng cho voucher');
   }
   if (!partial || body.code !== undefined) {
     body.code = normalizeCode(body.code);
     if (!/^[A-Z0-9][A-Z0-9 _-]{1,48}[A-Z0-9]$/.test(body.code)) {
-      const error = new Error('Mã voucher chỉ gồm chữ, số, khoảng trắng, dấu gạch ngang hoặc gạch dưới và dài 3-50 ký tự');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Mã voucher chỉ gồm chữ, số, khoảng trắng, dấu gạch ngang hoặc gạch dưới và dài 3-50 ký tự');
     }
   }
   if (!partial || body.name !== undefined) {
     body.name = String(body.name || '').trim();
     if (!body.name) {
-      const error = new Error('Tên voucher không được để trống');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tên voucher không được để trống');
     }
     if (body.name.length > 255) {
-      const error = new Error('Tên voucher không được vượt quá 255 ký tự');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tên voucher không được vượt quá 255 ký tự');
     }
   }
   if (!partial || body.discount_type !== undefined) {
     body.discount_type = body.discount_type || 'percentage';
     if (!DISCOUNT_TYPES.has(body.discount_type)) {
-      const error = new Error('Loại giảm giá không hợp lệ');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Loại giảm giá không hợp lệ');
     }
   }
   for (const field of ['discount_value', 'min_order_amount', 'max_discount_amount']) {
     if (body[field] !== undefined && body[field] !== null && body[field] !== '') {
       body[field] = Number(body[field]);
       if (!Number.isFinite(body[field]) || body[field] < 0) {
-        const error = new Error(`${field} phải là số không âm`);
-        error.statusCode = 400;
-        throw error;
+        throw new BadRequestError(`${field} phải là số không âm`);
       }
     }
   }
   if (body.discount_type === 'percentage' && Number(body.discount_value) > 100) {
-    const error = new Error('Voucher phần trăm không được vượt quá 100');
-    error.statusCode = 400;
-    throw error;
+    throw new BadRequestError('Voucher phần trăm không được vượt quá 100');
   }
   if (body.usage_limit !== undefined && body.usage_limit !== null && body.usage_limit !== '') {
     body.usage_limit = Number(body.usage_limit);
     if (!Number.isInteger(body.usage_limit) || body.usage_limit < 0) {
-      const error = new Error('Số lượt dùng phải là số nguyên không âm');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Số lượt dùng phải là số nguyên không âm');
     }
   } else if (body.usage_limit === '') {
     body.usage_limit = null;
@@ -89,16 +70,12 @@ function validatePayload(payload, { partial = false } = {}) {
   if (body.starts_at !== undefined) body.starts_at = normalizeDate(body.starts_at, 'Thời gian bắt đầu');
   if (body.expires_at !== undefined) body.expires_at = normalizeDate(body.expires_at, 'Thời gian kết thúc');
   if (body.starts_at && body.expires_at && new Date(body.starts_at) >= new Date(body.expires_at)) {
-    const error = new Error('Thời gian kết thúc phải sau thời gian bắt đầu');
-    error.statusCode = 400;
-    throw error;
+    throw new BadRequestError('Thời gian kết thúc phải sau thời gian bắt đầu');
   }
   if (body.active !== undefined) {
     if (typeof body.active === 'string') {
       if (!['true', 'false'].includes(body.active.toLowerCase())) {
-        const error = new Error('Trạng thái voucher không hợp lệ');
-        error.statusCode = 400;
-        throw error;
+        throw new BadRequestError('Trạng thái voucher không hợp lệ');
       }
       body.active = body.active.toLowerCase() === 'true';
     } else {
@@ -159,9 +136,7 @@ export class VoucherRepository {
     if (subtotal !== undefined && subtotal !== '') {
       const amount = Number(subtotal);
       if (!Number.isFinite(amount) || amount < 0) {
-        const error = new Error('Giá trị đơn hàng không hợp lệ');
-        error.statusCode = 400;
-        throw error;
+        throw new BadRequestError('Giá trị đơn hàng không hợp lệ');
       }
       values.push(amount);
       conditions.push(`min_order_amount <= $${values.length}`);
@@ -209,10 +184,7 @@ export class VoucherRepository {
       ]);
       return mapVoucher(result.rows[0]);
     } catch (error) {
-      if (error.code === '23505') {
-        error.statusCode = 409;
-        error.message = 'Mã voucher đã tồn tại';
-      }
+      if (error.code === '23505') throw new ConflictError('Mã voucher đã tồn tại');
       throw error;
     }
   }
@@ -225,9 +197,7 @@ export class VoucherRepository {
     const body = validatePayload({ ...current, ...payload });
     await this.validateRecipients(body.recipient_ids, client);
     if (body.usage_limit !== null && body.usage_limit < current.used_count) {
-      const error = new Error('Tổng lượt dùng không được nhỏ hơn số lượt đã sử dụng');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Tổng lượt dùng không được nhỏ hơn số lượt đã sử dụng');
     }
     const fields = ['code', 'name', 'discount_type', 'discount_value', 'min_order_amount', 'max_discount_amount', 'usage_limit', 'starts_at', 'expires_at', 'active', 'audience', 'recipient_ids'];
     const sets = [];
@@ -248,10 +218,7 @@ export class VoucherRepository {
       `, values);
       return result.rows[0] ? mapVoucher(result.rows[0]) : null;
     } catch (error) {
-      if (error.code === '23505') {
-        error.statusCode = 409;
-        error.message = 'Mã voucher đã tồn tại';
-      }
+      if (error.code === '23505') throw new ConflictError('Mã voucher đã tồn tại');
       throw error;
     }
   }
@@ -278,9 +245,7 @@ export class VoucherRepository {
     if (!ids.length) return;
     const { rows } = await client.query("SELECT id FROM users WHERE id = ANY($1::uuid[]) AND role = 'customer'", [ids]);
     if (rows.length !== ids.length) {
-      const error = new Error('Danh sách nhận voucher có khách hàng không hợp lệ');
-      error.statusCode = 400;
-      throw error;
+      throw new BadRequestError('Danh sách nhận voucher có khách hàng không hợp lệ');
     }
   }
 
@@ -299,17 +264,11 @@ export class VoucherRepository {
     `, [cleanCode, userId || null]);
     const voucher = result.rows[0];
     if (!voucher) {
-      const error = new Error('Voucher không tồn tại, đã hết hạn hoặc đã hết lượt dùng');
-      error.statusCode = 400;
-      error.code = 'VOUCHER_INVALID';
-      throw error;
+      throw new BadRequestError('Voucher không tồn tại, đã hết hạn hoặc đã hết lượt dùng');
     }
     const orderSubtotal = Number(subtotal) || 0;
     if (orderSubtotal < Number(voucher.min_order_amount)) {
-      const error = new Error(`Đơn tối thiểu để dùng voucher là ${Number(voucher.min_order_amount).toLocaleString('vi-VN')} đ`);
-      error.statusCode = 400;
-      error.code = 'VOUCHER_MIN_ORDER';
-      throw error;
+      throw new BadRequestError(`Đơn tối thiểu để dùng voucher là ${Number(voucher.min_order_amount).toLocaleString('vi-VN')} đ`);
     }
     let discountAmount = 0;
     if (voucher.discount_type === 'free_shipping') discountAmount = Number(shippingFee) || 0;
@@ -337,10 +296,7 @@ export class VoucherRepository {
       RETURNING id, code, used_count, usage_limit;
     `, [id, userId || null]);
     if (!result.rows[0]) {
-      const error = new Error('Voucher đã hết lượt dùng, vui lòng chọn mã khác');
-      error.statusCode = 409;
-      error.code = 'VOUCHER_EXHAUSTED';
-      throw error;
+      throw new ConflictError('Voucher đã hết lượt dùng, vui lòng chọn mã khác');
     }
     return result.rows[0];
   }

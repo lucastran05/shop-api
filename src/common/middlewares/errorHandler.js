@@ -29,6 +29,8 @@ export const errorHandler = (err, req, res, next) => {
   return res.status(statusCode).json({
     status: 'error',
     message,
+    // Lý do nghiệp vụ dạng mã (vd. review chưa đủ điều kiện) để FE hiển thị phù hợp
+    ...(statusCode < 500 && err.reason ? { reason: err.reason } : {}),
   });
 };
 

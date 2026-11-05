@@ -1,5 +1,6 @@
 import pool from '../../config/db.js';
 import { chatEvents } from './chat-events.js';
+import { BadRequestError } from '../../common/errors/AppError.js';
 
 export class CommunicationRepository {
   constructor(db = pool) {
@@ -273,7 +274,7 @@ export class CommunicationRepository {
           AND (owner = ANY($2::text[]) OR conversation_id = ANY($2::text[]));
       `, [after_id, context.keys]);
       const boundary = afterRes.rows[0];
-      if (!boundary) { const error = new Error('Invalid message boundary'); error.statusCode = 400; throw error; }
+      if (!boundary) throw new BadRequestError('Invalid message boundary');
       values.push(boundary.created_at, boundary.id);
       conditions.push('(created_at, id) > ($' + (values.length - 1) + ', $' + values.length + '::uuid)');
     }
@@ -287,7 +288,7 @@ export class CommunicationRepository {
       } else if (!Number.isNaN(Date.parse(cursor))) {
         values.push(cursor);
         conditions.push('created_at < $' + values.length);
-      } else { const error = new Error('Invalid message cursor'); error.statusCode = 400; throw error; }
+      } else throw new BadRequestError('Invalid message cursor');
     }
     values.push(limitNum + 1);
     const direction = after_id ? 'ASC' : 'DESC';
@@ -322,9 +323,7 @@ export class CommunicationRepository {
 
   async sendConversationMessage(conversationId, senderUser, { content, client_message_id, sender_role = 'customer' }, client = this.db) {
     if (typeof content !== 'string' || !content.trim() || content.length > 2000) {
-      const err = new Error('Nội dung tin nhắn phải có từ 1 đến 2000 ký tự');
-      err.statusCode = 400;
-      throw err;
+      throw new BadRequestError('Nội dung tin nhắn phải có từ 1 đến 2000 ký tự');
     }
     const context = await this.getConversationContext(conversationId, client);
     const storedKey = await this.getStoredConversationKey(conversationId, client);
