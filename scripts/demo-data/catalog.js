@@ -1,6 +1,6 @@
 // Danh mục và sản phẩm demo cho shop hoa / cây cảnh.
-// Mỗi biến thể có ảnh minh họa SVG ở shop-web/public/products/<image>.svg
-// (art: kiểu hình minh họa; colors: màu dùng để vẽ ảnh).
+// Mỗi biến thể có ảnh minh họa ở demo-data/images/<id biến thể>.png; script seed upload ảnh
+// lên object storage (MinIO) như ảnh admin tải lên. art/colors/flower/plant là thông số đã dùng để vẽ ảnh.
 
 export const CATEGORIES = [
   'Hoa bó',
@@ -278,6 +278,3 @@ export const PRODUCTS = [
     ],
   },
 ];
-
-// Ảnh của một biến thể: /products/<id>.svg
-export const variantImage = (variant) => `/products/${variant.id}.svg`;
