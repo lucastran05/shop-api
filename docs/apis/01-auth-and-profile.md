@@ -268,3 +268,11 @@ curl -X GET "http://localhost:5000/api/v1/me" \
   "code": "INVALID_CURRENT_PASSWORD"
 }
 ```
+# Quên mật khẩu
+
+- `POST /api/v1/auth/forgot-password`: body `{ "email": "customer@example.com" }`. Response 200 có `data.success: true` và thông báo trung lập, không trả token. Email tài khoản đang hoạt động nhận link dùng một lần, hết hạn sau 15 phút; gửi lại cách nhau ít nhất 60 giây.
+- `POST /api/v1/auth/reset-password`: body `{ "token": "<64 hex characters>", "password": "new-password", "password_confirmation": "new-password" }`. Mật khẩu từ 6 ký tự đến 72 byte UTF-8, xác nhận bắt buộc khớp. Thành công trả 200 và `data.success: true`; link sai, hết hạn, đã dùng hoặc tài khoản bị khóa trả 400.
+- Hai endpoint không yêu cầu đăng nhập, áp dụng auth rate limit. Database chỉ lưu SHA-256 của token. Việc thay mật khẩu, tiêu thụ token và tăng phiên bản phiên đăng nhập diễn ra trong cùng một UPDATE để chống dùng lại đồng thời.
+- Access token, refresh token và quyền gửi/nhận chat của phiên cũ bị thu hồi. Link đang chờ cũng bị hủy khi đổi mật khẩu, đổi email hoặc khóa tài khoản qua repository.
+- Email link dùng `PASSWORD_RESET_URL` được cấu hình phía server, token nằm ở fragment để không lọt vào access log/Referer. Gửi mail lỗi thì hủy token vừa tạo, ghi cảnh báo không chứa bí mật và vẫn trả thông báo trung lập.
+- Local: `docker compose up -d --build --wait`, mở `http://localhost:8025` để đọc mail. Chi tiết SMTP và frontend URL ở README gốc.

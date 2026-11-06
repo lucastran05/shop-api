@@ -8,25 +8,24 @@ import {
   removePrivateImage,
 } from "../services/upload-storage.js";
 
-const defaultImages = {
-  store: (userId, file) => storePrivateImage("flower-identifications", userId, file),
-  open: openPrivateImage,
-  remove: removePrivateImage,
-};
-
-// Storage cleanup is best effort: a leftover file must not fail the user request.
-async function removeQuietly(images, keys) {
-  for (const key of keys)
-    await images.remove(key).catch((error) =>
-      console.error("Không xóa được ảnh nhận diện hoa:", error.message),
-    );
-}
+// Controller cho nhận diện hoa và lịch sử nhận diện.
+// Các phụ thuộc (identify, describe, history, images) được truyền vào createFlowerController
+// để test thay bằng bản giả mà không cần Pl@ntNet, Wikipedia, database hay MinIO.
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Ảnh nhận diện là ảnh riêng tư, lưu dưới thư mục "flower-identifications/<userId>/".
+const privateImages = {
+  store: (userId, file) =>
+    storePrivateImage("flower-identifications", userId, file),
+  open: openPrivateImage,
+  remove: removePrivateImage,
+};
+
+// Lỗi có statusCode là lỗi nghiệp vụ đã có thông báo an toàn, trả thẳng cho client.
+// Lỗi khác (bug, lỗi DB...) chuyển cho error handler chung của Express.
 function sendError(error, res, next) {
-  // Services emit sanitized, user-safe operational messages; do not expose upstream data.
   if (error.statusCode)
     return res
       .status(error.statusCode)
@@ -54,38 +53,61 @@ export function createFlowerController({
   identify: identifyImpl = identifyFlower,
   describe = describeFlower,
   history = flowerHistory,
-  images = defaultImages,
+  images = privateImages,
 } = {}) {
+  // Xóa file ảnh trong storage. Chỉ ghi log khi lỗi: file sót lại không được làm hỏng request.
+  async function removeImagesQuietly(keys) {
+    for (const key of keys) {
+      try {
+        await images.remove(key);
+      } catch (error) {
+        console.error("Không xóa được ảnh nhận diện hoa:", error.message);
+      }
+    }
+  }
+
+  // Lưu ảnh + kết quả vào lịch sử, trả về id bản ghi (hoặc null nếu lưu thất bại).
+  // Lưu ảnh lỗi: vẫn lưu kết quả, chỉ là không có ảnh.
+  // Lưu bản ghi lỗi: xóa luôn ảnh vừa lưu để không còn file mồ côi.
+  // Không ném lỗi: kết quả nhận diện vẫn phải đến tay người dùng.
+  async function saveToHistory(userId, candidates, file) {
+    let imageKey = null;
+    try {
+      imageKey = await images.store(userId, file);
+    } catch (error) {
+      console.error("Không lưu được ảnh nhận diện hoa:", error.message);
+    }
+
+    try {
+      const record = await history.create(userId, candidates, imageKey);
+      return record.id;
+    } catch (error) {
+      console.error("Không lưu được lịch sử nhận diện hoa:", error.message);
+      if (imageKey) await removeImagesQuietly([imageKey]);
+      return null;
+    }
+  }
+
   return {
     // POST /api/v1/flowers/identify
     async identify(req, res, next) {
       try {
+        // 1. Nhận diện bằng Pl@ntNet (tối đa 3 loài, điểm giảm dần).
         const candidates = await identifyImpl(req.file);
-        // The UI shows only the best match, so only that one gets the Wikipedia lookup.
-        if (candidates[0])
-          Object.assign(
-            candidates[0],
-            await describe(candidates[0].scientificName, {
-              english: req.query.lang === "en",
-            }),
-          );
+        const best = candidates[0];
+
         let historyId = null;
-        if (candidates[0]) {
-          // The photo is kept only together with a history entry, never on its own.
-          let imageKey = null;
-          try {
-            imageKey = await images.store(req.user.id, req.file);
-          } catch (error) {
-            console.error("Không lưu được ảnh nhận diện hoa:", error.message);
-          }
-          try {
-            historyId = (await history.create(req.user.id, candidates, imageKey)).id;
-          } catch (error) {
-            // A history write failure must not hide a successful identification.
-            console.error("Không lưu được lịch sử nhận diện hoa:", error.message);
-            if (imageKey) await removeQuietly(images, [imageKey]);
-          }
+        if (best) {
+          // 2. Giao diện chỉ hiện loài đứng đầu, nên chỉ tra Wikipedia cho loài đó.
+          const info = await describe(best.scientificName, {
+            english: req.query.lang === "en",
+          });
+          Object.assign(best, info); // thêm vietnameseName và description
+
+          // 3. Lưu ảnh và kết quả vào lịch sử của người dùng.
+          historyId = await saveToHistory(req.user.id, candidates, req.file);
         }
+
         res.json({ status: "success", data: { candidates, historyId } });
       } catch (error) {
         sendError(error, res, next);
@@ -114,7 +136,8 @@ export function createFlowerController({
     // GET /api/v1/flowers/history/:id
     async getHistory(req, res, next) {
       try {
-        const record = await history.findById(req.user.id, requireId(req.params.id));
+        const id = requireId(req.params.id);
+        const record = await history.findById(req.user.id, id);
         if (!record) throw new NotFoundError("Không tìm thấy lịch sử nhận diện");
         res.json({ status: "success", data: record });
       } catch (error) {
@@ -123,22 +146,26 @@ export function createFlowerController({
     },
 
     // GET /api/v1/flowers/history/:id/image
+    // Stream ảnh từ storage thẳng về client, không đọc cả file vào RAM.
     async getHistoryImage(req, res, next) {
       try {
-        const key = await history.findImageKey(req.user.id, requireId(req.params.id));
-        const file = key ? await images.open(key) : null;
+        const id = requireId(req.params.id);
+        // Truy vấn lọc theo user_id: người khác nhận 404 như thể ảnh không tồn tại.
+        const imageKey = await history.findImageKey(req.user.id, id);
+        const file = imageKey ? await images.open(imageKey) : null;
         if (!file) throw new NotFoundError("Không tìm thấy ảnh nhận diện");
+
         res.set({
           "Content-Type": file.contentType,
           "Content-Length": String(file.size),
-          // Personal photo: browser may cache it, shared caches must not.
+          // Ảnh cá nhân: trình duyệt được cache, proxy/CDN dùng chung thì không.
           "Cache-Control": "private, max-age=86400",
         });
         file.stream.on("error", (error) => {
           if (res.headersSent) res.destroy(error);
           else next(error);
         });
-        res.on("close", () => file.stream.destroy());
+        res.on("close", () => file.stream.destroy()); // client ngắt thì dừng đọc file
         file.stream.pipe(res);
       } catch (error) {
         sendError(error, res, next);
@@ -148,9 +175,10 @@ export function createFlowerController({
     // DELETE /api/v1/flowers/history/:id
     async deleteHistory(req, res, next) {
       try {
-        const removed = await history.remove(req.user.id, requireId(req.params.id));
+        const id = requireId(req.params.id);
+        const removed = await history.remove(req.user.id, id);
         if (!removed) throw new NotFoundError("Không tìm thấy lịch sử nhận diện");
-        if (removed.imageKey) await removeQuietly(images, [removed.imageKey]);
+        if (removed.imageKey) await removeImagesQuietly([removed.imageKey]);
         res.json({ status: "success", message: "Đã xóa lịch sử nhận diện" });
       } catch (error) {
         sendError(error, res, next);
@@ -161,7 +189,7 @@ export function createFlowerController({
     async clearHistory(req, res, next) {
       try {
         const { deleted, imageKeys } = await history.clear(req.user.id);
-        await removeQuietly(images, imageKeys);
+        await removeImagesQuietly(imageKeys);
         res.json({
           status: "success",
           message: "Đã xóa toàn bộ lịch sử nhận diện",
@@ -174,7 +202,7 @@ export function createFlowerController({
   };
 }
 
-const controller = createFlowerController();
+// Instance dùng thật trong routes, với các phụ thuộc mặc định.
 export const {
   identify,
   listHistory,
@@ -182,4 +210,4 @@ export const {
   getHistoryImage,
   deleteHistory,
   clearHistory,
-} = controller;
+} = createFlowerController();

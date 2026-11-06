@@ -259,9 +259,10 @@ Lưu ý: `vietnamese_name` lưu tên lấy từ Wikipedia lúc nhận diện. T�
   - Chuyển sang tab Lịch sử sẽ tắt camera. Ảnh và kết quả ở tab Nhận diện vẫn được giữ.
 - **File chính:**
   - `shop-web/src/features/customer/components/FlowerIdentifier.jsx` và `.css`
-  - `FlowerMatch.jsx` (thẻ kết quả dùng chung), `FlowerHistory.jsx` (tab Lịch sử), `FlowerHistoryImage.jsx` (tải ảnh riêng tư)
+  - `useFlowerCamera.js` (hook mở, chụp, đóng camera), `FlowerMatch.jsx` (thẻ kết quả dùng chung)
+  - `FlowerHistory.jsx` (tab Lịch sử), `useFlowerHistory.js` (hook gọi API lịch sử), `FlowerHistoryImage.jsx` (tải ảnh riêng tư), `FlowerIcon.jsx`
   - `HeaderSearch.jsx`
-  - `shop-web/src/shared/utils/flowerNames.js`
+  - `shop-web/src/shared/utils/flowerNames.js` (logic chọn tên, ý nghĩa) và `flowerData.js` (bảng tên, ý nghĩa tự soạn)
   - `shop-web/src/shared/api/flowers.service.ts`
 
 ## 8. Kiểm thử

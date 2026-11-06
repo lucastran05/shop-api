@@ -13,6 +13,9 @@ async function authenticatedUser(req) {
   }
   const user = await identityRepository.findById(decoded.id);
   if (!user || user.active === false) throw new UnauthorizedError('Tài khoản không còn hoạt động');
+  if ((decoded.token_version ?? 0) !== user.token_version) {
+    throw new UnauthorizedError('Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.');
+  }
   return { ...decoded, id: user.id, email: user.email, role: user.role };
 }
 

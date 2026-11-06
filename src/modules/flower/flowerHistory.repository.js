@@ -1,9 +1,11 @@
 import pool from "../../config/db.js";
 
-// Every query is scoped by user_id: a user can never read or delete another user's history.
+// Truy cập bảng flower_identifications (lịch sử nhận diện hoa).
+// Mọi truy vấn đều có điều kiện user_id: không ai đọc hay xóa được lịch sử của người khác.
 const COLUMNS = `id, scientific_name, vietnamese_name, common_names, family,
   score, description, candidates, image_key, created_at`;
 
+// Đổi một dòng DB (snake_case) sang object trả cho client (camelCase).
 function toRecord(row) {
   return {
     id: row.id,
@@ -14,7 +16,7 @@ function toRecord(row) {
     score: Number(row.score),
     description: { vi: "", en: "", ...(row.description || {}) },
     candidates: row.candidates || [],
-    // The storage key stays server-side; clients only learn whether a photo exists.
+    // Key ảnh trong storage chỉ dùng ở server, client chỉ cần biết có ảnh hay không.
     hasImage: Boolean(row.image_key),
     createdAt: row.created_at,
   };
@@ -25,7 +27,7 @@ export class FlowerHistoryRepository {
     this.db = db;
   }
 
-  // Internal: storage key of a record photo, used to stream or delete it.
+  // Lấy key ảnh của bản ghi để stream hoặc xóa file. undefined = không có bản ghi.
   async findImageKey(userId, id) {
     const { rows } = await this.db.query(
       "SELECT image_key FROM flower_identifications WHERE id = $1 AND user_id = $2",
@@ -34,7 +36,7 @@ export class FlowerHistoryRepository {
     return rows[0] ? rows[0].image_key : undefined;
   }
 
-  // Saves the best match plus the full candidate list returned to the user.
+  // Lưu loài đứng đầu (các cột riêng) và cả 3 ứng viên (cột candidates dạng JSONB).
   async create(userId, candidates, imageKey = null) {
     const [top] = candidates;
     const { rows } = await this.db.query(
@@ -64,6 +66,7 @@ export class FlowerHistoryRepository {
     return toRecord(rows[0]);
   }
 
+  // Danh sách có phân trang, mới nhất trước. Chạy song song truy vấn dữ liệu và đếm tổng.
   async list(userId, { page, limit }) {
     const offset = (page - 1) * limit;
     const [items, count] = await Promise.all([
@@ -95,7 +98,7 @@ export class FlowerHistoryRepository {
     return rows[0] ? toRecord(rows[0]) : null;
   }
 
-  // Returns { imageKey } of the deleted row, or null when nothing matched.
+  // Xóa một bản ghi, trả về { imageKey } để xóa file ảnh, hoặc null nếu không tìm thấy.
   async remove(userId, id) {
     const { rows } = await this.db.query(
       "DELETE FROM flower_identifications WHERE id = $1 AND user_id = $2 RETURNING image_key",
@@ -104,7 +107,7 @@ export class FlowerHistoryRepository {
     return rows[0] ? { imageKey: rows[0].image_key } : null;
   }
 
-  // Returns the storage keys of deleted photos so the caller can remove them.
+  // Xóa toàn bộ lịch sử, trả về số bản ghi đã xóa và các key ảnh cần xóa trong storage.
   async clear(userId) {
     const { rows } = await this.db.query(
       "DELETE FROM flower_identifications WHERE user_id = $1 RETURNING image_key",

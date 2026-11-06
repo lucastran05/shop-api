@@ -75,6 +75,12 @@ export const initDB = async () => {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;`);
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_hash TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_requested_at TIMESTAMPTZ;
+    `);
 
     // 2. Bảng sản phẩm (products)
     const createProductsTableQuery = `

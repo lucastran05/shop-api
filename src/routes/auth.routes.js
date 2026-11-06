@@ -10,6 +10,8 @@ router.post('/register', authRateLimiter, AuthController.register);
 
 // AUTH02: Đăng nhập
 router.post('/login', authRateLimiter, AuthController.login);
+router.post('/forgot-password', authRateLimiter, AuthController.forgotPassword);
+router.post('/reset-password', authRateLimiter, AuthController.resetPassword);
 
 // Refresh token
 router.post('/refresh-token', authRateLimiter, AuthController.refreshToken);

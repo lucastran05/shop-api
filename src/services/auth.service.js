@@ -10,6 +10,9 @@ import { isValidEmail, isValidPassword } from '../validations/auth.validation.js
 import lockManager from '../common/ports/ILockManager.js';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../common/errors/AppError.js';
 import { toProfileView } from '../modules/identity/userView.js';
+import { randomBytes } from 'node:crypto';
+import { passwordResetMail, passwordResetUrl } from './password-reset-mail.js';
+import logger from '../common/utils/logger.js';
 
 class AuthService {
   // Logic đăng ký tài khoản
@@ -51,6 +54,7 @@ class AuthService {
       id: newUser.id,
       email: newUser.email,
       role: newUser.role,
+      token_version: newUser.token_version ?? 0,
     };
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
@@ -105,6 +109,7 @@ class AuthService {
       id: user.id,
       email: user.email,
       role: user.role,
+      token_version: user.token_version ?? 0,
     };
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
@@ -147,6 +152,10 @@ class AuthService {
     return await lockManager.acquireAndExecute(tokenHash, async () => {
       // 2. Kiểm tra Refresh Token có khớp trong DB không
       const user = await identityRepository.findByRefreshToken(trimmedToken);
+      const currentUser = user || await identityRepository.findById(decoded.id);
+      if (currentUser && (decoded.token_version ?? 0) !== currentUser.token_version) {
+        throw new ForbiddenError('Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.');
+      }
       if (!user || user.id !== decoded.id) {
         // PHÁT HIỆN TÁI SỬ DỤNG TOKEN (Token Reuse Detection):
         // Chữ ký JWT hợp lệ và chưa hết hạn, nhưng token này không khớp với token đang lưu trong DB.
@@ -169,6 +178,7 @@ class AuthService {
         id: user.id,
         email: user.email,
         role: user.role,
+        token_version: user.token_version ?? 0,
       };
       const newAccessToken = generateAccessToken(payload);
       const newRefreshToken = generateRefreshToken(payload);
@@ -181,6 +191,43 @@ class AuthService {
         refreshToken: newRefreshToken,
       };
     });
+  }
+
+  static async forgotPassword({ email } = {}) {
+    if (!isValidEmail(email) || email.length > 255) {
+      throw new BadRequestError('Email không đúng định dạng hợp lệ');
+    }
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = hashToken(token);
+    const url = passwordResetUrl(token);
+    const user = await identityRepository.createPasswordReset(email.trim().toLowerCase(), tokenHash);
+    if (user) {
+      try {
+        await passwordResetMail.send(user.email, url);
+      } catch {
+        await identityRepository.cancelPasswordReset(tokenHash);
+        // Do not reveal account existence or put reset links in logs.
+        logger.warn('Password reset email delivery failed. Check SMTP configuration and availability.');
+      }
+    }
+    return { success: true };
+  }
+
+  static async resetPassword({ token, password, password_confirmation } = {}) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
+      throw new BadRequestError('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+    if (!isValidPassword(password) || Buffer.byteLength(password, 'utf8') > 72) {
+      throw new BadRequestError('Mật khẩu phải có ít nhất 6 ký tự và không vượt quá 72 byte');
+    }
+    if (password !== password_confirmation) {
+      throw new BadRequestError('Xác nhận mật khẩu không khớp');
+    }
+    const updated = await identityRepository.resetPassword(hashToken(token), await hashPassword(password));
+    if (!updated) {
+      throw new BadRequestError('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+    return { success: true };
   }
 
   // Logic đăng xuất: xóa rf_token trong database
