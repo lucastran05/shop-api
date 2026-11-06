@@ -1,3 +1,4 @@
+import { normalizeFlowerSpecies } from './flowerSpecies.js';
 import pool from '../../config/db.js';
 import { BadRequestError, ForbiddenError } from '../../common/errors/AppError.js';
 import { parseJsonArray } from './productStock.js';
@@ -16,7 +17,7 @@ const SORTS = {
 };
 
 // Bộ lọc dùng chung cho danh sách sản phẩm của khách và của quản trị
-function productFilters({ keyword, category_id, is_pinned }) {
+function productFilters({ keyword, category_id, is_pinned, flower_species }) {
   const conditions = [];
   const values = [];
   if (keyword?.trim()) {
@@ -31,12 +32,23 @@ function productFilters({ keyword, category_id, is_pinned }) {
     values.push(isTrue(is_pinned));
     conditions.push(`(p.is_pinned = $${values.length} OR p.featured = $${values.length})`);
   }
+  if (flower_species !== undefined) {
+    const [species] = normalizeFlowerSpecies([flower_species]);
+    values.push(species.toLowerCase());
+    conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(p.flower_species) AS species(name) WHERE LOWER(BTRIM(REGEXP_REPLACE(species.name, '[[:space:]]+', ' ', 'g'))) = $${values.length})`);
+    conditions.push(`NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p.attributes) AS attr WHERE COALESCE(attr->>'name', attr->>'label') IN ('visibility', '_visibility') AND COALESCE(attr->>'value', 'public') <> 'public')`);
+  }
   return { conditions, values };
 }
 
 export class CatalogRepository {
   constructor(db = pool) {
     this.db = db;
+  }
+
+  async listFlowerSpecies() {
+    const { rows } = await this.db.query(`SELECT MIN(species.name) AS name FROM products p, jsonb_array_elements_text(p.flower_species) AS species(name) GROUP BY LOWER(species.name) ORDER BY LOWER(species.name)`);
+    return rows.map(row => row.name);
   }
 
   // --- Categories Management (ADC01 - ADC05, CAT03) ---
@@ -163,13 +175,14 @@ export class CatalogRepository {
     min_price,
     max_price,
     in_stock,
+    flower_species,
     is_pinned,
     sort = 'newest',
     page = 1,
     limit = 20,
   } = {}, client = this.db) {
     const offset = (Math.max(1, page) - 1) * limit;
-    const { conditions, values } = productFilters({ keyword, category_id, is_pinned });
+    const { conditions, values } = productFilters({ keyword, category_id, is_pinned, flower_species });
     conditions.unshift('(p.active = TRUE)');
     if (isTrue(in_stock)) conditions.push('p.stock > 0');
     if (hasValue(min_price)) {
@@ -311,7 +324,7 @@ export class CatalogRepository {
     const query = `
       SELECT p.id, p.name, p.category, p.category_id, p.description,
              p.price, p.old_price AS "oldPrice", p.old_price, p.stock,
-             p.image, p.images, p.variants, p.attributes,
+             p.image, p.images, p.variants, p.attributes, p.flower_species,
              COALESCE(p.is_pinned, p.featured, FALSE) AS is_pinned,
              COALESCE(p.allow_deposit, p.deposit, FALSE) AS allow_deposit,
              COALESCE(p.deposit_rate, 20) AS deposit_rate,
@@ -354,6 +367,7 @@ export class CatalogRepository {
       images: parsedImages,
       variants: parsedVariants,
       attributes: parsedAttributes,
+      flower_species: parseJsonArray(raw.flower_species),
       price: Number(raw.price),
       old_price: raw.old_price ? Number(raw.old_price) : null,
       stock_quantity: Number(raw.stock),
@@ -381,6 +395,7 @@ export class CatalogRepository {
     images = [],
     variants = [],
     attributes = [],
+    flower_species = [],
     is_pinned = false,
     is_active = true,
     allow_deposit = false,
@@ -398,9 +413,9 @@ export class CatalogRepository {
     const result = await client.query(`
       INSERT INTO products (
         name, category, category_id, description, price, old_price, stock, image, images,
-        variants, attributes, featured, is_pinned, active, deposit, allow_deposit, deposit_rate
+        variants, attributes, featured, is_pinned, active, deposit, allow_deposit, deposit_rate, flower_species
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14, $14, $15, $16)
       RETURNING id;
     `, [
       name,
@@ -418,6 +433,7 @@ export class CatalogRepository {
       Boolean(is_active),
       Boolean(allow_deposit),
       Number(deposit_rate) || 20,
+      JSON.stringify(normalizeFlowerSpecies(flower_species)),
     ]);
     return result.rows[0];
   }
@@ -438,6 +454,7 @@ export class CatalogRepository {
       images: 'images',
       variants: 'variants',
       attributes: 'attributes',
+      flower_species: 'flower_species',
       featured: 'featured',
       is_pinned: 'is_pinned',
       active: 'active',
@@ -453,8 +470,9 @@ export class CatalogRepository {
     for (const [key, val] of Object.entries(fields)) {
       const col = columnMap[key];
       if (!col || val === undefined) continue;
-      const value = ['images', 'variants', 'attributes'].includes(col) && typeof val === 'object'
-        ? JSON.stringify(val)
+      const normalized = col === 'flower_species' ? normalizeFlowerSpecies(val) : val;
+      const value = ['images', 'variants', 'attributes', 'flower_species'].includes(col) && typeof val === 'object'
+        ? JSON.stringify(normalized)
         : val;
       columns.set(col, value);
       // Đồng bộ đôi cột tương thích

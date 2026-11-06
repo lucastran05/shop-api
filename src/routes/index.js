@@ -1,3 +1,4 @@
+import flowerRoutes from './flower.routes.js';
 import { Router } from 'express';
 import authRoutes from './auth.routes.js';
 import meRoutes from './me.routes.js';
@@ -23,6 +24,7 @@ const router = Router();
 // --- 1. Theo đặc tả Danh sách API ABC Shop (/api/v1/...) ---
 
 // AUTH01 - AUTH03: /api/v1/auth
+router.use('/flowers', flowerRoutes);
 router.use('/auth', authRoutes);
 
 // AUTH04 - AUTH06, ADR01 - ADR05: /api/v1/me

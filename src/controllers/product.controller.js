@@ -44,6 +44,7 @@ class ProductController {
     } = req.query;
 
     const result = await catalogRepository.findAllCustomer({
+      flower_species: req.query.flower_species,
       keyword: keyword || search || "",
       category_id: category_id || category || "",
       min_price: min_price !== undefined ? min_price : minPrice,
@@ -94,6 +95,10 @@ class ProductController {
   });
 
   // --- Admin Endpoints (ADP01 - ADP07) ---
+
+  static flowerSpecies = asyncHandler(async (_req, res) => {
+    res.json({ status: 'success', data: await catalogRepository.listFlowerSpecies() });
+  });
 
   // GET /admin/products (ADP01)
   static adminGetAll = asyncHandler(async (req, res) => {
@@ -170,6 +175,7 @@ class ProductController {
       images: images || [],
       variants: variants || [],
       attributes: attributes || [],
+      flower_species: req.body.flower_species,
       is_active: is_active ?? active,
       is_pinned: is_pinned ?? featured,
       allow_deposit: allow_deposit ?? deposit,
@@ -221,6 +227,7 @@ class ProductController {
     } = req.body;
 
     const updateFields = {};
+    if (req.body.flower_species !== undefined) updateFields.flower_species = req.body.flower_species;
     if (name !== undefined) updateFields.name = name;
     if (category !== undefined) updateFields.category = category;
     if (category_id !== undefined) updateFields.category_id = category_id;
