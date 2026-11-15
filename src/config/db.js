@@ -75,6 +75,12 @@ export const initDB = async () => {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;`);
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_hash TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_requested_at TIMESTAMPTZ;
+    `);
 
     // 2. Bảng sản phẩm (products)
     const createProductsTableQuery = `
@@ -253,9 +259,30 @@ export const initDB = async () => {
     // Cập nhật các cột bổ sung cho products nếu chưa có
     await client.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS flower_species JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(flower_species) = 'array');
       ALTER TABLE products ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_deposit BOOLEAN DEFAULT FALSE;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS deposit_rate NUMERIC(5, 2) DEFAULT 20;
+    `);
+
+    // Lịch sử nhận diện hoa: chỉ lưu kết quả, không lưu ảnh
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS flower_identifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        scientific_name VARCHAR(255) NOT NULL,
+        vietnamese_name VARCHAR(255) NOT NULL DEFAULT '',
+        common_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+        family VARCHAR(255) NOT NULL DEFAULT '',
+        score NUMERIC(6, 5) NOT NULL CHECK (score >= 0 AND score <= 1),
+        description JSONB NOT NULL DEFAULT '{}'::jsonb,
+        candidates JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(candidates) = 'array'),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_flower_identifications_user_created
+        ON flower_identifications(user_id, created_at DESC);
+      -- Storage key of the uploaded photo (private, never served publicly); NULL if not stored
+      ALTER TABLE flower_identifications ADD COLUMN IF NOT EXISTS image_key VARCHAR(255);
     `);
 
     // 9. Bảng đánh giá sản phẩm (reviews)
@@ -272,6 +299,20 @@ export const initDB = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
     `);
+    // Mỗi khách chỉ đánh giá một sản phẩm một lần. Dữ liệu cũ còn bản trùng thì
+    // bỏ qua bước tạo ràng buộc (app vẫn chặn đánh giá mới) để không làm hỏng khởi động.
+    const duplicateReviews = await client.query(`
+      SELECT 1 FROM reviews WHERE user_id IS NOT NULL
+      GROUP BY product_id, user_id HAVING COUNT(*) > 1 LIMIT 1;
+    `);
+    if (duplicateReviews.rowCount === 0) {
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_product_user
+        ON reviews(product_id, user_id) WHERE user_id IS NOT NULL;
+      `);
+    } else {
+      console.warn('⚠️ Bảng reviews có khách đánh giá trùng sản phẩm; chưa tạo được ràng buộc uq_reviews_product_user.');
+    }
 
     // 10. Bảng upload file (uploads)
     await client.query(`

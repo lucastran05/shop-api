@@ -20,7 +20,7 @@ export class IdentityRepository {
   async findByEmail(email, client = this.db) {
     if (!email) return null;
     const query = `
-      SELECT id, name, email, password, role, phone, address, avatar, active, rf_token, created_at, updated_at
+      SELECT id, name, email, password, role, phone, address, avatar, active, rf_token, token_version, created_at, updated_at
       FROM users
       WHERE LOWER(email) = LOWER($1)
       LIMIT 1;
@@ -32,7 +32,7 @@ export class IdentityRepository {
   async findById(id, client = this.db) {
     if (!id) return null;
     const query = `
-      SELECT id, name, email, role, phone, address, avatar, active, created_at, updated_at
+      SELECT id, name, email, role, phone, address, avatar, active, token_version, created_at, updated_at
       FROM users
       WHERE id = $1
       LIMIT 1;
@@ -123,6 +123,11 @@ export class IdentityRepository {
       values.push(fields[key]);
     });
 
+    if (validKeys.includes('password') || validKeys.includes('email') || fields.active === false) {
+      setClauses.push('rf_token = NULL', 'token_version = token_version + 1',
+        'password_reset_hash = NULL', 'password_reset_expires_at = NULL');
+    }
+
     setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
     values.push(id);
 
@@ -165,7 +170,7 @@ export class IdentityRepository {
     if (!rf_token || typeof rf_token !== 'string') return null;
     const hashedToken = hashToken(rf_token);
     const query = `
-      SELECT id, name, email, role, active, rf_token
+      SELECT id, name, email, role, active, rf_token, token_version
       FROM users
       WHERE rf_token = $1 OR rf_token = $2
       LIMIT 1;
@@ -342,11 +347,50 @@ export class IdentityRepository {
   async updatePassword(userId, newHashedPassword, client = this.db) {
     const query = `
       UPDATE users
-      SET password = $1, rf_token = NULL, updated_at = CURRENT_TIMESTAMP
+      SET password = $1, rf_token = NULL, token_version = token_version + 1,
+          password_reset_hash = NULL, password_reset_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
       RETURNING id, updated_at;
     `;
     const result = await client.query(query, [newHashedPassword, userId]);
+    return result.rows[0] || null;
+  }
+
+  async createPasswordReset(email, tokenHash, client = this.db) {
+    // The database also enforces the cooldown across API instances.
+    const result = await client.query(`
+      UPDATE users
+      SET password_reset_hash = $2,
+          password_reset_expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes',
+          password_reset_requested_at = CURRENT_TIMESTAMP
+      WHERE LOWER(email) = LOWER($1) AND active IS NOT FALSE
+        AND (password_reset_requested_at IS NULL
+          OR password_reset_requested_at <= CURRENT_TIMESTAMP - INTERVAL '60 seconds')
+      RETURNING id, email;
+    `, [email, tokenHash]);
+    return result.rows[0] || null;
+  }
+
+  async cancelPasswordReset(tokenHash, client = this.db) {
+    await client.query(`
+      UPDATE users SET password_reset_hash = NULL, password_reset_expires_at = NULL,
+                       password_reset_requested_at = NULL
+      WHERE password_reset_hash = $1;
+    `, [tokenHash]);
+  }
+
+  async resetPassword(tokenHash, password, client = this.db) {
+    // Consume the token and revoke sessions in the same atomic update.
+    const result = await client.query(`
+      UPDATE users
+      SET password = $2, rf_token = NULL, token_version = token_version + 1,
+          password_reset_hash = NULL, password_reset_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE password_reset_hash = $1 AND password_reset_expires_at > CURRENT_TIMESTAMP
+        AND active IS NOT FALSE
+      RETURNING id;
+    `, [tokenHash, password]);
     return result.rows[0] || null;
   }
 }

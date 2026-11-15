@@ -3,6 +3,24 @@ import { BadRequestError } from '../common/errors/AppError.js';
 import { asyncHandler } from '../common/utils/asyncHandler.js';
 
 class AuthController {
+  static forgotPassword = asyncHandler(async (req, res) => {
+    const result = await AuthService.forgotPassword(req.body);
+    return res.status(200).json({
+      status: 'success',
+      message: 'Nếu email thuộc tài khoản đang hoạt động, bạn sẽ nhận được liên kết đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.',
+      data: result,
+    });
+  });
+
+  static resetPassword = asyncHandler(async (req, res) => {
+    const result = await AuthService.resetPassword(req.body);
+    return res.status(200).json({
+      status: 'success',
+      message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.',
+      data: result,
+    });
+  });
+
   // POST /api/v1/auth/register & /api/v1/users/register (AUTH01)
   static register = asyncHandler(async (req, res) => {
     const { name, email, password, password_confirmation } = req.body;

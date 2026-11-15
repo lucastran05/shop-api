@@ -47,7 +47,8 @@ export function attachChatSocket(
           if (
             !actor ||
             actor.active === false ||
-            actor.role !== socket.user.role
+            actor.role !== socket.user.role ||
+            actor.token_version !== socket.user.token_version
           )
             socket.close(4403, "Account unavailable");
           else send(socket, ids ? { type: "removed", ids, customer } : { type: "message", message, customer });
@@ -115,6 +116,7 @@ export function attachChatSocket(
           if (
             !user ||
             user.active === false ||
+            (decoded.token_version ?? 0) !== user.token_version ||
             !["admin", "manager", "customer"].includes(user.role)
           )
             return socket.close(4403, "Account unavailable");
@@ -138,7 +140,8 @@ export function attachChatSocket(
             statusCode: 400,
           });
         const actor = await identity.findById(socket.user.id);
-        if (!actor || actor.active === false || actor.role !== socket.user.role)
+        if (!actor || actor.active === false || actor.role !== socket.user.role ||
+            actor.token_version !== socket.user.token_version)
           return socket.close(4403, "Account unavailable");
         let result;
         if (request.type === "read" && !CommunicationPolicy.isStaff(actor)) {

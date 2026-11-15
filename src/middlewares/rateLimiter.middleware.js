@@ -25,11 +25,12 @@ if (cleanupInterval.unref) {
 export const rateLimiter = ({
   windowMs = 15 * 60 * 1000,
   max = 100,
+  keyGenerator,
   message = 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.',
 } = {}) => {
   return (req, res, next) => {
     const ip = req.ip || req.connection?.remoteAddress || '127.0.0.1';
-    const key = `${req.baseUrl || ''}${req.path}:${ip}`;
+    const key = `${req.baseUrl || ''}${req.path}:${keyGenerator ? keyGenerator(req) : ip}`;
     const now = Date.now();
 
     let record = rateLimitMap.get(key);

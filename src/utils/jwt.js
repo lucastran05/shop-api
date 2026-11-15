@@ -65,6 +65,7 @@ export const generateAccessToken = (payload) => {
 export const generateRefreshToken = (payload) => {
   const tokenPayload = {
     id: payload.id,
+    token_version: payload.token_version ?? 0,
     token_type: 'refresh',
   };
 

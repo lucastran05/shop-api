@@ -42,6 +42,7 @@ router.get('/reports/sales', DashboardController.getSalesReport);
 router.post('/products/bulk-delete', ProductController.bulkDelete);
 
 // ADP01: Danh sách sản phẩm quản trị
+router.get('/flower-species', ProductController.flowerSpecies);
 router.get('/products', ProductController.adminGetAll);
 
 // ADP02: Chi tiết sản phẩm quản trị

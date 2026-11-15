@@ -28,6 +28,7 @@ Trước khi lập trình hoặc tích hợp API, các thành viên bắt buộc
 | 8 | Quản lý đơn hàng của khách | `ORD` | [`08-orders.md`](./08-orders.md) | 3 |
 | 9 | Chat hội thoại và thông báo | `CHAT` / `NOT` | [`09-chat-and-notifications.md`](./09-chat-and-notifications.md) | 6 |
 | 10 | Thông tin công khai của cửa hàng | `SHOP` | [`10-shop-info.md`](./10-shop-info.md) | 1 |
+| 10a | Nhận diện hoa và lịch sử nhận diện | `FLOWER` | [`flower-identification.md`](./flower-identification.md) | 8 |
 
 ---
 
