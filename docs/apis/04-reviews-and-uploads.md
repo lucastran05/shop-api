@@ -14,6 +14,8 @@ Cho phép khách hàng để lại đánh giá, số sao chấm điểm và ản
   - Hỗ trợ tải tối đa 3 ảnh (JPG, PNG, WebP), dung lượng tối đa 2MB mỗi ảnh.
   - Tải file ảnh thực hiện qua endpoint `POST /api/v1/uploads` trước, sau đó truyền danh sách `image_ids` khi gửi đánh giá.
   - Xem danh sách và điểm đánh giá trung bình là công khai (`Public`). Đăng đánh giá và upload ảnh bắt buộc đăng nhập.
+  - Chỉ khách đã mua sản phẩm và có đơn ở trạng thái `completed`/`delivered` mới được đánh giá.
+  - Mỗi khách chỉ đánh giá một sản phẩm **một lần**. DB có ràng buộc duy nhất `uq_reviews_product_user (product_id, user_id)`.
 
 ---
 
@@ -122,6 +124,18 @@ Cho phép khách hàng để lại đánh giá, số sao chấm điểm và ản
   }
 }
 ```
+
+---
+
+#### Lỗi nghiệp vụ
+
+| HTTP | `reason` | Khi nào |
+|---|---|---|
+| 403 | `not_purchased` | Khách chưa mua sản phẩm này |
+| 403 | `not_delivered` | Đã mua nhưng đơn chưa giao thành công |
+| 409 | `already_reviewed` | Khách đã đánh giá sản phẩm này rồi |
+
+`GET /api/v1/products/:product_id/reviews/eligibility` trả `can_review`, `reason` như trên; với `already_reviewed` có thêm `review_id`.
 
 ---
 

@@ -299,6 +299,20 @@ export const initDB = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
     `);
+    // Mỗi khách chỉ đánh giá một sản phẩm một lần. Dữ liệu cũ còn bản trùng thì
+    // bỏ qua bước tạo ràng buộc (app vẫn chặn đánh giá mới) để không làm hỏng khởi động.
+    const duplicateReviews = await client.query(`
+      SELECT 1 FROM reviews WHERE user_id IS NOT NULL
+      GROUP BY product_id, user_id HAVING COUNT(*) > 1 LIMIT 1;
+    `);
+    if (duplicateReviews.rowCount === 0) {
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_product_user
+        ON reviews(product_id, user_id) WHERE user_id IS NOT NULL;
+      `);
+    } else {
+      console.warn('⚠️ Bảng reviews có khách đánh giá trùng sản phẩm; chưa tạo được ràng buộc uq_reviews_product_user.');
+    }
 
     // 10. Bảng upload file (uploads)
     await client.query(`

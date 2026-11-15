@@ -1,6 +1,6 @@
 import { normalizeFlowerSpecies } from './flowerSpecies.js';
 import pool from '../../config/db.js';
-import { BadRequestError, ForbiddenError } from '../../common/errors/AppError.js';
+import { BadRequestError, ConflictError, ForbiddenError } from '../../common/errors/AppError.js';
 import { parseJsonArray } from './productStock.js';
 
 // Query string gửi giá trị dạng chuỗi: '' hoặc thiếu nghĩa là không lọc
@@ -559,6 +559,20 @@ export class CatalogRepository {
       };
     }
 
+    // Mỗi khách chỉ được đánh giá một sản phẩm một lần
+    const existing = await client.query(
+      `SELECT id FROM reviews WHERE product_id = $1 AND user_id = $2 LIMIT 1;`,
+      [productId, userId],
+    );
+    if (existing.rowCount > 0) {
+      return {
+        can_review: false,
+        reason: 'already_reviewed',
+        review_id: existing.rows[0].id,
+        message: 'Bạn đã đánh giá sản phẩm này. Mỗi sản phẩm chỉ được đánh giá một lần.',
+      };
+    }
+
     // Kiểm tra các đơn hàng của khách hàng có chứa sản phẩm này
     const orderQuery = `
       SELECT o.id, o.code, o.status, o.status_label
@@ -665,7 +679,8 @@ export class CatalogRepository {
     // Chỉ cho phép đánh giá khi khách đã mua hàng và nhận hàng thành công
     const eligibility = await this.checkReviewEligibility(productId, userId, client);
     if (!eligibility.can_review) {
-      throw Object.assign(new ForbiddenError(eligibility.message), { reason: eligibility.reason || 'NOT_ELIGIBLE' });
+      const ErrorType = eligibility.reason === 'already_reviewed' ? ConflictError : ForbiddenError;
+      throw Object.assign(new ErrorType(eligibility.message), { reason: eligibility.reason || 'NOT_ELIGIBLE' });
     }
 
     // Resolve image URLs from uploads if image_ids are provided
@@ -679,7 +694,9 @@ export class CatalogRepository {
 
     const query = `
       INSERT INTO reviews (product_id, user_id, rating, content, images)
-      VALUES ($1, $2, $3, $4, $5)
+      SELECT $1::uuid, $2::uuid, $3::int, $4::text, $5::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM reviews WHERE product_id = $1::uuid AND user_id = $2::uuid)
+      ON CONFLICT DO NOTHING
       RETURNING id, product_id, rating, content, images, created_at;
     `;
     const result = await client.query(query, [
@@ -690,6 +707,13 @@ export class CatalogRepository {
       JSON.stringify(images),
     ]);
 
+    // Hai yêu cầu gửi gần như cùng lúc: yêu cầu sau không chèn được dòng nào
+    if (result.rowCount === 0) {
+      throw Object.assign(
+        new ConflictError('Bạn đã đánh giá sản phẩm này. Mỗi sản phẩm chỉ được đánh giá một lần.'),
+        { reason: 'already_reviewed' },
+      );
+    }
     const newRev = result.rows[0];
     const userRes = await client.query(`SELECT id, name FROM users WHERE id = $1;`, [userId]);
     const author = userRes.rows[0] || { id: userId, name: 'Khách hàng' };

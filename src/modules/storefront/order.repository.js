@@ -580,9 +580,14 @@ export class OrderRepository {
 
     // Doanh thu chỉ tính đơn đã hoàn thành
     const revenue = await sum(`SELECT COALESCE(SUM(paid_amount), 0)::numeric AS total FROM orders WHERE status = 'completed';`);
+    // Doanh thu hôm nay: tổng tiền đơn đặt trong hôm nay theo giờ Việt Nam,
+    // bỏ đơn đã hủy, hoàn hàng hoặc hoàn tiền (khớp với ô trên dashboard)
     const todayRevenue = await sum(`
-      SELECT COALESCE(SUM(paid_amount), 0)::numeric AS total FROM orders
-      WHERE status = 'completed' AND DATE(completed_at) = CURRENT_DATE;`);
+      SELECT COALESCE(SUM(total_amount), 0)::numeric AS total FROM orders
+      WHERE status NOT IN ('cancelled', 'returned', 'refunded')
+        AND payment_status <> 'refunded'
+        AND (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+          = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date;`);
     const orderCount = await count('SELECT COUNT(*)::int AS count FROM orders;');
     const pendingCount = await count(`SELECT COUNT(*)::int AS count FROM orders WHERE status = 'pending';`);
     const lowStockCount = await count(`SELECT COUNT(*)::int AS count FROM products WHERE stock <= ${LOW_STOCK_THRESHOLD};`);
@@ -624,6 +629,7 @@ export class OrderRepository {
         to: to || new Date().toISOString(),
         timezone,
         revenue_date_basis: 'completed_at',
+        today_revenue_basis: 'created_at',
       },
     };
   }
