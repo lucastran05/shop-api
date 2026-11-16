@@ -1,0 +1,737 @@
+[
+  {
+    "sku": "FLOWER-01",
+    "name": "Bó hồng đỏ Thổ Lộ",
+    "category": "Hoa tình yêu",
+    "price": 350000,
+    "flower": "hồng đỏ",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "tỏ tình",
+      "Valentine",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Sắc đỏ nổi bật, gợi ý cho thông điệp tình yêu rõ ràng."
+  },
+  {
+    "sku": "FLOWER-02",
+    "name": "Bó hồng pastel Dịu Dàng",
+    "category": "Hoa sinh nhật",
+    "price": 320000,
+    "flower": "hồng phấn",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "sinh nhật",
+      "8/3",
+      "20/10"
+    ],
+    "advice": "Tông hồng nhẹ, phù hợp người thích phong cách dịu dàng."
+  },
+  {
+    "sku": "FLOWER-03",
+    "name": "Bó hồng trắng Thanh Khiết",
+    "category": "Hoa cưới",
+    "price": 380000,
+    "flower": "hồng trắng",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "kết hôn",
+      "cầu hôn",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Tông trắng tối giản, phối cùng trang phục cưới sáng màu."
+  },
+  {
+    "sku": "FLOWER-04",
+    "name": "Bó hồng cam Nắng Ấm",
+    "category": "Hoa sinh nhật",
+    "price": 290000,
+    "flower": "hồng cam",
+    "seasons": [
+      "hạ",
+      "thu"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "occasions": [
+      "sinh nhật",
+      "chúc mừng",
+      "tốt nghiệp"
+    ],
+    "advice": "Màu cam ấm áp, dành cho lời chúc vui tươi."
+  },
+  {
+    "sku": "FLOWER-05",
+    "name": "Hộp hồng đỏ Hẹn Ước",
+    "category": "Hoa tình yêu",
+    "price": 650000,
+    "flower": "hồng đỏ",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "cầu hôn",
+      "Valentine",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Hộp hoa trang trọng, thuận tiện đặt trên bàn."
+  },
+  {
+    "sku": "FLOWER-06",
+    "name": "Bó tulip hồng Xuân Sang",
+    "category": "Hoa mùa xuân",
+    "price": 480000,
+    "flower": "tulip hồng",
+    "seasons": [
+      "xuân"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "occasions": [
+      "sinh nhật",
+      "8/3",
+      "tỏ tình"
+    ],
+    "advice": "Dáng hoa gọn, lựa chọn cho người thích phong cách hiện đại."
+  },
+  {
+    "sku": "FLOWER-07",
+    "name": "Bó tulip vàng Rạng Rỡ",
+    "category": "Hoa mùa xuân",
+    "price": 460000,
+    "flower": "tulip vàng",
+    "seasons": [
+      "xuân"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "occasions": [
+      "sinh nhật",
+      "tốt nghiệp",
+      "chúc mừng"
+    ],
+    "advice": "Tông vàng sáng, gợi không khí vui vẻ."
+  },
+  {
+    "sku": "FLOWER-08",
+    "name": "Bó tulip trắng Tinh Khôi",
+    "category": "Hoa cưới",
+    "price": 520000,
+    "flower": "tulip trắng",
+    "seasons": [
+      "xuân"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "occasions": [
+      "kết hôn",
+      "cầu hôn"
+    ],
+    "advice": "Phong cách trắng đơn sắc, tối giản."
+  },
+  {
+    "sku": "FLOWER-09",
+    "name": "Bó mẫu đơn Hồng Mơ",
+    "category": "Hoa mùa hạ",
+    "price": 850000,
+    "flower": "mẫu đơn hồng",
+    "seasons": [
+      "xuân",
+      "hạ"
+    ],
+    "months": [
+      4,
+      5,
+      6
+    ],
+    "occasions": [
+      "kỷ niệm ngày cưới",
+      "sinh nhật",
+      "cầu hôn"
+    ],
+    "advice": "Bông lớn mềm mại, phong cách lãng mạn; cần hỏi shop nguồn hoa trước ngày tặng."
+  },
+  {
+    "sku": "FLOWER-10",
+    "name": "Bó sen hồng Bình An",
+    "category": "Hoa mùa hạ",
+    "price": 280000,
+    "flower": "sen hồng",
+    "seasons": [
+      "hạ"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "occasions": [
+      "tặng mẹ",
+      "sinh nhật",
+      "tri ân"
+    ],
+    "advice": "Phong cách mộc mạc, phù hợp người yêu vẻ đẹp truyền thống."
+  },
+  {
+    "sku": "FLOWER-11",
+    "name": "Bó sen trắng An Nhiên",
+    "category": "Hoa mùa hạ",
+    "price": 300000,
+    "flower": "sen trắng",
+    "seasons": [
+      "hạ"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "occasions": [
+      "tri ân",
+      "tặng mẹ"
+    ],
+    "advice": "Tông trắng thanh lịch, gói giấy đơn giản."
+  },
+  {
+    "sku": "FLOWER-12",
+    "name": "Bó hướng dương Vươn Xa",
+    "category": "Hoa chúc mừng",
+    "price": 250000,
+    "flower": "hướng dương",
+    "seasons": [
+      "hạ",
+      "thu"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "occasions": [
+      "tốt nghiệp",
+      "sinh nhật",
+      "khai trương"
+    ],
+    "advice": "Sắc vàng tươi và dáng bông nổi bật cho lời chúc động viên."
+  },
+  {
+    "sku": "FLOWER-13",
+    "name": "Giỏ hướng dương Thành Công",
+    "category": "Hoa chúc mừng",
+    "price": 550000,
+    "flower": "hướng dương",
+    "seasons": [
+      "hạ",
+      "thu"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "occasions": [
+      "khai trương",
+      "tốt nghiệp",
+      "chúc mừng"
+    ],
+    "advice": "Giỏ hoa vàng thích hợp trưng bày tại bàn tiếp khách."
+  },
+  {
+    "sku": "FLOWER-14",
+    "name": "Bó cẩm tú cầu Biển Xanh",
+    "category": "Hoa sinh nhật",
+    "price": 420000,
+    "flower": "cẩm tú cầu xanh",
+    "seasons": [
+      "hạ"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "occasions": [
+      "sinh nhật",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Tông xanh mát, hợp người không thích màu hồng đỏ."
+  },
+  {
+    "sku": "FLOWER-15",
+    "name": "Bó cẩm tú cầu Mây Trắng",
+    "category": "Hoa cưới",
+    "price": 450000,
+    "flower": "cẩm tú cầu trắng",
+    "seasons": [
+      "hạ"
+    ],
+    "months": [
+      5,
+      6,
+      7,
+      8
+    ],
+    "occasions": [
+      "kết hôn",
+      "cầu hôn"
+    ],
+    "advice": "Chùm hoa tròn tạo vẻ đầy đặn cho bó hoa."
+  },
+  {
+    "sku": "FLOWER-16",
+    "name": "Bó cúc họa mi Thu Hà Nội",
+    "category": "Hoa mùa thu",
+    "price": 220000,
+    "flower": "cúc họa mi trắng",
+    "seasons": [
+      "thu",
+      "đông"
+    ],
+    "months": [
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "sinh nhật",
+      "tỏ tình"
+    ],
+    "advice": "Bông nhỏ trắng vàng, phong cách giản dị."
+  },
+  {
+    "sku": "FLOWER-17",
+    "name": "Bó thạch thảo Tím Nhớ",
+    "category": "Hoa mùa thu",
+    "price": 240000,
+    "flower": "thạch thảo tím",
+    "seasons": [
+      "thu"
+    ],
+    "months": [
+      9,
+      10,
+      11
+    ],
+    "occasions": [
+      "sinh nhật",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Sắc tím nhẹ, phù hợp người thích vẻ mộc mạc."
+  },
+  {
+    "sku": "FLOWER-18",
+    "name": "Bó cúc ping pong Vui Vẻ",
+    "category": "Hoa mùa thu",
+    "price": 260000,
+    "flower": "cúc ping pong vàng",
+    "seasons": [
+      "thu"
+    ],
+    "months": [
+      8,
+      9,
+      10,
+      11
+    ],
+    "occasions": [
+      "sinh nhật",
+      "chúc mừng"
+    ],
+    "advice": "Bông tròn vàng, tạo cảm giác trẻ trung."
+  },
+  {
+    "sku": "FLOWER-19",
+    "name": "Giỏ cúc vàng Sum Vầy",
+    "category": "Hoa lễ Tết",
+    "price": 390000,
+    "flower": "cúc vàng",
+    "seasons": [
+      "xuân",
+      "thu"
+    ],
+    "months": [
+      1,
+      2,
+      9,
+      10,
+      11
+    ],
+    "occasions": [
+      "Tết",
+      "tân gia",
+      "khai trương"
+    ],
+    "advice": "Tông vàng cho không gian đón khách và sum họp."
+  },
+  {
+    "sku": "FLOWER-20",
+    "name": "Bó đồng tiền May Mắn",
+    "category": "Hoa chúc mừng",
+    "price": 230000,
+    "flower": "đồng tiền nhiều màu",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "khai trương",
+      "sinh nhật",
+      "tốt nghiệp"
+    ],
+    "advice": "Bó nhiều màu rực rỡ, lựa chọn quà tặng vừa ngân sách."
+  },
+  {
+    "sku": "FLOWER-21",
+    "name": "Bó cẩm chướng Yêu Thương",
+    "category": "Hoa tri ân",
+    "price": 270000,
+    "flower": "cẩm chướng hồng",
+    "seasons": [
+      "xuân",
+      "đông"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "occasions": [
+      "Ngày của Mẹ",
+      "8/3",
+      "20/10",
+      "20/11",
+      "tặng mẹ"
+    ],
+    "advice": "Gợi ý của shop cho lời cảm ơn và sự quan tâm."
+  },
+  {
+    "sku": "FLOWER-22",
+    "name": "Giỏ cẩm chướng Tri Ân",
+    "category": "Hoa tri ân",
+    "price": 430000,
+    "flower": "cẩm chướng hồng trắng",
+    "seasons": [
+      "xuân",
+      "đông"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "occasions": [
+      "20/11",
+      "Ngày của Mẹ",
+      "tri ân"
+    ],
+    "advice": "Giỏ phối hồng trắng, thuận tiện trưng bày trên bàn."
+  },
+  {
+    "sku": "FLOWER-23",
+    "name": "Bó cát tường Hạnh Phúc",
+    "category": "Hoa cưới",
+    "price": 360000,
+    "flower": "cát tường tím",
+    "seasons": [
+      "xuân",
+      "đông"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "occasions": [
+      "kết hôn",
+      "kỷ niệm ngày cưới",
+      "sinh nhật"
+    ],
+    "advice": "Cánh mềm và tông tím, phong cách nhẹ nhàng."
+  },
+  {
+    "sku": "FLOWER-24",
+    "name": "Bó baby trắng Lời Hẹn",
+    "category": "Hoa tình yêu",
+    "price": 200000,
+    "flower": "baby trắng",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "tỏ tình",
+      "kết hôn",
+      "sinh nhật"
+    ],
+    "advice": "Bông nhỏ, bó tối giản và nhẹ mắt."
+  },
+  {
+    "sku": "FLOWER-25",
+    "name": "Bó lily hồng Kiêu Sa",
+    "category": "Hoa tri ân",
+    "price": 400000,
+    "flower": "lily hồng",
+    "seasons": [
+      "đông",
+      "xuân"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      11,
+      12
+    ],
+    "occasions": [
+      "20/11",
+      "8/3",
+      "20/10"
+    ],
+    "advice": "Bông lớn, mùi hương có thể đậm; tránh chọn cho nhà có mèo."
+  },
+  {
+    "sku": "FLOWER-26",
+    "name": "Chậu lan hồ điệp Phú Quý",
+    "category": "Hoa lễ Tết",
+    "price": 1200000,
+    "flower": "lan hồ điệp tím",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "Tết",
+      "khai trương",
+      "tân gia"
+    ],
+    "advice": "Chậu hoa trưng bày, phù hợp không gian tiếp khách."
+  },
+  {
+    "sku": "FLOWER-27",
+    "name": "Bó thược dược Sắc Xuân",
+    "category": "Hoa mùa xuân",
+    "price": 310000,
+    "flower": "thược dược nhiều màu",
+    "seasons": [
+      "xuân",
+      "đông"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      12
+    ],
+    "occasions": [
+      "Tết",
+      "sinh nhật",
+      "tặng mẹ"
+    ],
+    "advice": "Bộ sưu tập Tết của shop với nhiều sắc hoa."
+  },
+  {
+    "sku": "FLOWER-28",
+    "name": "Bó lay ơn Đón Tết",
+    "category": "Hoa lễ Tết",
+    "price": 260000,
+    "flower": "lay ơn đỏ",
+    "seasons": [
+      "xuân",
+      "đông"
+    ],
+    "months": [
+      1,
+      2,
+      12
+    ],
+    "occasions": [
+      "Tết",
+      "tân gia"
+    ],
+    "advice": "Cành cao thích hợp bình dài, cần chọn vị trí đặt vững."
+  },
+  {
+    "sku": "FLOWER-29",
+    "name": "Bó hồng đỏ Đông Ấm",
+    "category": "Hoa mùa đông",
+    "price": 390000,
+    "flower": "hồng đỏ và lá xanh",
+    "seasons": [
+      "đông"
+    ],
+    "months": [
+      11,
+      12,
+      1
+    ],
+    "occasions": [
+      "Giáng sinh",
+      "Valentine",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Phối đỏ xanh cho quà tặng cuối năm."
+  },
+  {
+    "sku": "FLOWER-30",
+    "name": "Bó cưới Garden Vow",
+    "category": "Hoa cưới",
+    "price": 750000,
+    "flower": "hồng trắng,cát tường,baby",
+    "seasons": [
+      "quanh năm"
+    ],
+    "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "occasions": [
+      "kết hôn",
+      "kỷ niệm ngày cưới"
+    ],
+    "advice": "Bó cưới phối trắng, gọn tay; trao đổi shop về kích thước và ngày sử dụng."
+  }
+]
