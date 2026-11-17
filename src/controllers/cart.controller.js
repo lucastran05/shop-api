@@ -1,4 +1,5 @@
 import cartRepository from '../modules/storefront/cart.repository.js';
+import { BOUQUET_HEIGHTS, BOUQUET_WRAPS, STEM_LENGTH } from '../modules/storefront/bouquetStyle.js';
 import { BadRequestError } from '../common/errors/AppError.js';
 import { asyncHandler } from '../common/utils/asyncHandler.js';
 
@@ -29,6 +30,28 @@ class CartController {
     return res.status(200).json({
       status: 'success',
       message: 'Thêm sản phẩm vào giỏ hàng thành công',
+      data: cart,
+    });
+  });
+
+  // GET /api/v1/bouquets/options (CART06): kiểu giấy gói và dáng bó đang nhận
+  static getBouquetOptions = asyncHandler(async (req, res) => {
+    return res.status(200).json({
+      status: 'success',
+      data: { wraps: BOUQUET_WRAPS, heights: BOUQUET_HEIGHTS, stem_length: STEM_LENGTH },
+    });
+  });
+
+  // POST /api/v1/cart/bouquets (CART05)
+  // Chỉ đọc items[{product_id, variant_id, stems}], wrap, height và quantity;
+  // mọi trường giá client gửi bị bỏ qua.
+  static addBouquet = asyncHandler(async (req, res) => {
+    const { items, quantity, wrap, height } = req.body || {};
+    const cart = await cartRepository.addBouquet(req.user.id, { items, quantity, wrap, height });
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Đã thêm bó hoa tự chọn vào giỏ hàng',
       data: cart,
     });
   });

@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "seed:demo": "node scripts/seed-demo.js",
     "seed:check": "node scripts/check-demo-integrity.js",
+    "import:stems": "node scripts/import-stem-images.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [

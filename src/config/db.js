@@ -263,6 +263,10 @@ export const initDB = async () => {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_deposit BOOLEAN DEFAULT FALSE;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS deposit_rate NUMERIC(5, 2) DEFAULT 20;
+      -- Hoa bán lẻ theo cành: mỗi biến thể là một màu, price = giá một cành, stock = số cành
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sold_by_stem BOOLEAN NOT NULL DEFAULT FALSE;
+      -- Cỡ bông so với hoa chuẩn (%), để bó xem trước đúng tỉ lệ giữa các loại hoa
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS stem_head_size SMALLINT NOT NULL DEFAULT 100;
     `);
 
     // Lịch sử nhận diện hoa: chỉ lưu kết quả, không lưu ảnh
@@ -402,6 +406,18 @@ export const initDB = async () => {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+    `);
+
+    // Bó hoa tự tạo: dòng giỏ/đơn loại 'custom_bouquet' không gắn product_id, thành phần
+    // [{product_id, variant_id, stems}] nằm trong JSONB; variant_id = 'custom:<hash thành phần>'
+    await client.query(`
+      ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS item_type VARCHAR(30) NOT NULL DEFAULT 'product';
+      ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS bouquet_components JSONB;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS item_type VARCHAR(30) NOT NULL DEFAULT 'product';
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS components JSONB;
+      -- Kiểu gói khách chọn: {wrap, height}; phụ phí giấy đã nằm trong đơn giá dòng bó
+      ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS bouquet_style JSONB;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS style JSONB;
     `);
 
     // 13. Bảng điều chỉnh kho (inventory_adjustments)
