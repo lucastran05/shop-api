@@ -5,6 +5,7 @@ import meRoutes from './me.routes.js';
 import locationRoutes from './location.routes.js';
 import categoryRoutes from './category.routes.js';
 import cartRoutes from './cart.routes.js';
+import bouquetRoutes from './bouquet.routes.js';
 import checkoutRoutes from './checkout.routes.js';
 import orderRoutes from './order.routes.js';
 import conversationRoutes from './conversation.routes.js';
@@ -39,8 +40,11 @@ router.use('/locations', locationRoutes);
 // CAT03: /api/v1/categories
 router.use('/categories', categoryRoutes);
 
-// CART01 - CART04: /api/v1/cart
+// CART01 - CART05: /api/v1/cart
 router.use('/cart', cartRoutes);
+
+// CART06: /api/v1/bouquets
+router.use('/bouquets', bouquetRoutes);
 
 // CHK01: /api/v1/checkout
 router.use('/checkout', checkoutRoutes);

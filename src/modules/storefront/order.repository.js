@@ -2,8 +2,9 @@ import pool from '../../config/db.js';
 import { withTransaction } from '../../config/transaction.js';
 import { withIdempotency } from '../../config/idempotency.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../common/errors/AppError.js';
-import { currentStock, lockProduct, parseJsonArray, saveStock } from '../catalog/productStock.js';
+import { currentStock, findVariant, lockProduct, parseJsonArray, saveStock } from '../catalog/productStock.js';
 import cartRepository from './cart.repository.js';
+import { CUSTOM_BOUQUET, isCustomBouquet, sortStockUnits, stockUnits } from './customBouquet.js';
 import { LOW_STOCK_THRESHOLD } from './inventory.repository.js';
 import { voucherRepository } from './voucher.repository.js';
 import { calculateQuote, findQuote, forgetQuote } from './quote.js';
@@ -27,7 +28,18 @@ function withNumericAmounts(row) {
   return result;
 }
 
-const mapItem = (item) => ({ ...item, unit_price: Number(item.unit_price), line_total: Number(item.line_total) });
+const mapItem = (item) => ({
+  ...item,
+  item_type: item.item_type || 'product',
+  components: Array.isArray(item.components) ? item.components : [],
+  style: item.style && typeof item.style === 'object' ? item.style : null,
+  unit_price: Number(item.unit_price),
+  line_total: Number(item.line_total),
+});
+
+// Thành phần bó lưu vào order_items.components (giá cành tại thời điểm đặt)
+const orderComponent = ({ product_id, variant_id, product_name, variant_label, color, stems, stem_length, unit_price, line_total, image_url }) =>
+  ({ product_id, variant_id, product_name, variant_label, color, stems, stem_length, unit_price, line_total, image_url });
 
 const asObject = (value) => (value && typeof value === 'object' ? value : {});
 
@@ -84,7 +96,8 @@ const ORDER_ITEMS_JSON = `
     'product_name', oi.product_name, 'variant_label', oi.variant_label,
     'color', oi.color, 'image_url', oi.image_url,
     'unit_price', oi.unit_price, 'quantity', oi.quantity,
-    'line_total', oi.line_total
+    'line_total', oi.line_total, 'item_type', oi.item_type, 'components', oi.components,
+    'style', oi.style
   )) FROM order_items oi WHERE oi.order_id = o.id), '[]'::json) AS items`;
 
 const LIST_COLUMNS = `
@@ -101,7 +114,7 @@ const CUSTOMER_COLUMNS = 'u.id AS user_id, u.name AS user_name, u.email AS user_
 async function loadItems(client, orderId) {
   const { rows } = await client.query(
     `SELECT product_id, variant_id, product_name, variant_label, color,
-            image_url, unit_price, quantity, line_total
+            image_url, unit_price, quantity, line_total, item_type, components, style
      FROM order_items WHERE order_id = $1;`,
     [orderId],
   );
@@ -213,15 +226,14 @@ export class OrderRepository {
     ]);
     const order = rows[0];
 
-    // Khóa sản phẩm theo thứ tự product_id cố định để tránh deadlock giữa các đơn đồng thời
-    const items = [...quote.items].sort((a, b) => a.product_id.localeCompare(b.product_id));
-    for (const item of items) {
+    for (const item of quote.items) {
+      const bouquet = isCustomBouquet(item);
       await client.query(`
         INSERT INTO order_items (
           order_id, product_id, variant_id, product_name, variant_label,
-          color, image_url, unit_price, quantity, line_total
+          color, image_url, unit_price, quantity, line_total, item_type, components, style
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
       `, [
         order.id,
         item.product_id,
@@ -233,8 +245,16 @@ export class OrderRepository {
         item.unit_price,
         item.quantity,
         item.line_total,
+        bouquet ? CUSTOM_BOUQUET : 'product',
+        // Ảnh chụp thành phần bó tại thời điểm đặt để trang đơn hàng hiển thị đúng
+        bouquet ? JSON.stringify(item.components.map(orderComponent)) : null,
+        bouquet ? JSON.stringify(item.style || {}) : null,
       ]);
-      await this.takeStock(client, item);
+    }
+    // Trừ kho từng biến thể (bó hoa: từng loại cành), khóa sản phẩm theo thứ tự product_id cố định
+    // để tránh deadlock giữa các đơn đồng thời
+    for (const unit of sortStockUnits(quote.items.flatMap(stockUnits))) {
+      await this.takeStock(client, unit);
     }
 
     if (quote.coupon?.id) await voucherRepository.consume(quote.coupon.id, userId, client);
@@ -251,8 +271,15 @@ export class OrderRepository {
   // Trừ tồn kho của biến thể đã đặt
   async takeStock(client, item) {
     const product = await lockProduct(client, item.product_id);
-    if (!product) return;
+    if (!product) {
+      if (item.strict_variant) throw new ConflictError(`Hoa ${item.product_name} không còn bán`);
+      return;
+    }
     if (!product.active) throw new ConflictError('Sản phẩm đã ngừng bán');
+    // Cành trong bó phải trừ đúng biến thể màu, không rơi về tồn tổng của sản phẩm
+    if (item.strict_variant && !findVariant(product.variants, item.variant_id)) {
+      throw new ConflictError(`Màu hoa ${item.product_name} không còn bán`);
+    }
     const stock = currentStock(product, item.variant_id);
     const quantity = Number(item.quantity);
     if (stock < quantity) throw new ConflictError(`Sản phẩm ${item.product_name} không còn đủ tồn kho`);
@@ -266,14 +293,15 @@ export class OrderRepository {
       [orderId],
     );
     const { rows: items } = await client.query(
-      'SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1;',
+      'SELECT product_id, variant_id, quantity, item_type, components FROM order_items WHERE order_id = $1;',
       [orderId],
     );
-    for (const item of items) {
-      const product = await lockProduct(client, item.product_id);
-      if (product) {
-        await saveStock(client, product, item.variant_id, currentStock(product, item.variant_id) + Number(item.quantity));
-      }
+    const units = items.flatMap((item) => stockUnits({ ...item, components: parseJsonArray(item.components) }));
+    for (const unit of sortStockUnits(units)) {
+      const product = await lockProduct(client, unit.product_id);
+      // Biến thể cành đã bị xóa thì không cộng vào tồn tổng (giữ stock = tổng tồn các biến thể)
+      if (!product || (unit.strict_variant && !findVariant(product.variants, unit.variant_id))) continue;
+      await saveStock(client, product, unit.variant_id, currentStock(product, unit.variant_id) + unit.quantity);
     }
   }
 

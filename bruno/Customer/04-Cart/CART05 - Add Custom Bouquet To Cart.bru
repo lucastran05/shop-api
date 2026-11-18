@@ -1,0 +1,55 @@
+meta {
+  name: CART05 - Add Custom Bouquet To Cart
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/cart/bouquets
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "items": [
+      { "product_id": "{{stemRoseId}}", "variant_id": "hong-canh-do", "stems": 3, "stem_length": 65, "unit_price": 1 },
+      { "product_id": "{{stemBabyId}}", "variant_id": "baby-canh-trang", "stems": 2, "stem_length": 40 }
+    ],
+    "quantity": 1,
+    "wrap": "silk",
+    "height": "tall",
+    "price": 1
+  }
+}
+
+docs {
+  Bó tự tạo 3 hồng đỏ 65 cm (20.000 đ/cành) + 2 baby trắng 40 cm (10.000 đ/cành).
+  Chiều dài cành đặt riêng cho từng loại hoa và không ảnh hưởng giá.
+  Lấy stemRoseId / stemBabyId từ GET /api/v1/products?sold_by_stem=true.
+  Các trường price / unit_price gửi kèm phải bị backend bỏ qua: unit_price của dòng bó vẫn là 80.000.
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("success");
+  });
+  test("Bouquet line is priced by the server", function() {
+    const line = res.getBody().data.items.find((item) => item.item_type === "custom_bouquet" && item.components.length === 2);
+    expect(line).to.be.an("object");
+    expect(line.product_id).to.equal(null);
+    expect(line.variant_id).to.match(/^custom:/);
+    expect(line.unit_price).to.equal(110000); // 80.000 tiền hoa + 30.000 lụa
+    expect(line.style.wrap).to.equal("silk");
+    expect(line.components.map((c) => c.stem_length).sort()).to.eql([40, 65]);
+  });
+}

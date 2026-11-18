@@ -2,9 +2,9 @@
 
 Danh mục triển khai theo chức năng và giao diện cùng các trường response
 
-Tài liệu bàn giao cho frontend và backend để thống nhất cách lấy dữ liệu và xử lý từng thao tác. Danh mục gồm 69 API phục vụ giao diện, một webhook thanh toán theo phương án tích hợp và ba API xóa nhiều còn cần xác định nghiệp vụ. Một API có thể được dùng ở nhiều màn hình.
+Tài liệu bàn giao cho frontend và backend để thống nhất cách lấy dữ liệu và xử lý từng thao tác. Danh mục gồm 71 API phục vụ giao diện, một webhook thanh toán theo phương án tích hợp và ba API xóa nhiều còn cần xác định nghiệp vụ. Một API có thể được dùng ở nhiều màn hình.
 
-Mã nguồn frontend hiện dùng dữ liệu mẫu và localStorage, chưa có lời gọi API nghiệp vụ. Vì vậy các đường dẫn và tên trường dưới đây là hợp đồng đề xuất để thay thế các thao tác cục bộ; chưa phải danh sách API backend đã triển khai. Phạm vi giao diện gồm 9 route khách hàng và 11 route quản trị.
+Mã nguồn frontend hiện dùng dữ liệu mẫu và localStorage, chưa có lời gọi API nghiệp vụ. Vì vậy các đường dẫn và tên trường dưới đây là hợp đồng đề xuất để thay thế các thao tác cục bộ; chưa phải danh sách API backend đã triển khai. Phạm vi giao diện gồm 10 route khách hàng và 11 route quản trị.
 
 ## Cách đọc và sử dụng
 
@@ -30,6 +30,7 @@ Không phát sinh API cho thao tác thuần giao diện như mở popup, chọn 
 | / | Danh sách, bộ lọc, tìm kiếm, mở chi tiết | CAT01; CAT03 |
 | /products/:id | Chi tiết, biến thể, mua ngay, đánh giá | CAT02; CART02; REV01–03; CHK01 |
 | /cart | Danh sách giỏ, đổi số lượng, xóa, chọn món | CART01–04; CHK01 |
+| /custom-bouquet | Tự tạo bó hoa từ hoa bán theo cành, chọn chiều dài cành cho từng loại hoa, giấy gói và dáng bó, xem trước bằng Canvas | CAT01 (sold_by_stem=true); CAT02; CART05–06 |
 | /checkout | Địa chỉ, báo giá, tạo đơn, cọc, QR hoặc thẻ | ADR01; CHK01–02; PAY01–02 |
 | /orders | Danh sách, chi tiết, hủy đơn | ORD01–03; dùng lại PAY02 khi theo dõi giao dịch |
 | /account | Hồ sơ, địa chỉ, đổi mật khẩu | AUTH04–06; ADR01–07 |
@@ -270,12 +271,14 @@ Quyền: Công khai; chỉ trả sản phẩm được phép hiển thị.
 
 `GET /api/v1/products`
 
-**Gửi:** Query: keyword, category_id, min_price, max_price, in_stock, is_pinned, sort, page, limit
+**Gửi:** Query: keyword, category_id, min_price, max_price, in_stock, is_pinned, sold_by_stem, sort, page, limit
 
 **Response:**
 
 ```text
-data[]: id, name, image_url, category, price, old_price, stock_quantity, is_pinned
+data[]: id, name, image_url, category, price, old_price, stock_quantity, is_pinned, sold_by_stem
+
+CAT02 và ADP02–04 có thêm: sold_by_stem, stem_head_size (cỡ bông %, 30–300, mặc định 100)
 data[].category: id, name
 filters: min_price, max_price
 pagination: page, limit, total, total_pages
@@ -423,6 +426,40 @@ data.items[]: id, product_id, variant_id, product_name, variant_label, color, im
 data: id, items, line_count, item_count, subtotal, currency, updated_at
 data.items[]: id, product_id, variant_id, product_name, variant_label, color, image_url, unit_price, quantity, stock_quantity, line_total, is_available
 ```
+
+#### CART05 — Thêm bó hoa tự tạo từ hoa bán theo cành
+
+`POST /api/v1/cart/bouquets`
+
+**Gửi:** Body: items[] (product_id, variant_id, stems, stem_length), quantity, wrap, height. Không gửi giá; backend bỏ qua mọi trường giá.
+
+**Response:**
+
+```text
+data: id, items, line_count, item_count, subtotal, currency, updated_at
+data.items[]: id, item_type, product_id, variant_id, product_name, variant_label, color, image_url, unit_price, quantity, stock_quantity, line_total, is_available, components
+data.items[].components[]: product_id, variant_id, product_name, variant_label, color, stems, stem_length, unit_price, line_total, image_url, stem_image, stock_quantity, is_available
+data.items[].style: wrap, wrap_name, wrap_price, height, height_name
+```
+
+#### CART06 — Kiểu giấy gói và dáng bó
+
+`GET /api/v1/bouquets/options`
+
+**Gửi:** Không có tham số. Công khai, không cần đăng nhập.
+
+**Response:**
+
+```text
+data: wraps, heights
+data.wraps[]: id, name, price, colors, description
+data.heights[]: id, name, scale, spread
+data.stem_length: min, max, step, default
+```
+
+Lưu ý triển khai: Chỉ nhận sản phẩm active và sold_by_stem; stems là số nguyên dương. Dòng bó có item_type = custom_bouquet, product_id = null, variant_id = custom:<hash thành phần + kiểu gói>; giống hệt nhau thì cộng số lượng, khác giấy gói hoặc dáng bó thì là dòng riêng. Giá bó = Σ(stems × giá cành hiện tại) + phụ phí giấy gói, tính lại ở CART01 và CHK01. Dáng bó và chiều dài cành không ảnh hưởng giá, chỉ là yêu cầu gói ghi kèm đơn. Chiều dài cành đặt riêng cho từng loại hoa trong bó. Tạo đơn trừ tồn từng biến thể cành, hủy đơn hoàn lại; order_items lưu components. Lỗi: 400 dữ liệu sai hoặc không phải hoa cành, 404 không tìm thấy hoa/màu, 409 ngừng bán hoặc thiếu cành. Các dòng thường từ CART01–04 có thêm item_type = product.
+
+Đối chiếu: CustomBouquetPage.jsx; CartPage.jsx; ShopContext.jsx; docs/apis/05-cart.md
 
 Lưu ý triển khai: Chọn dòng và chọn tất cả có thể lưu tại frontend; khi báo giá chỉ gửi các dòng đã chọn. Không cần API riêng cho checkbox. Backend kiểm tra tồn và giá khi thêm, đổi số lượng và tạo đơn. subtotal ở giỏ là toàn bộ giỏ; subtotal cho các dòng được chọn do CHK01 trả về.
 

@@ -43,6 +43,7 @@ Cung cấp danh mục sản phẩm, bộ lọc, tìm kiếm theo từ khóa và 
   - `category_id` (UUID): Lọc theo danh mục.
   - `min_price`, `max_price` (number): Lọc theo khoảng giá (VND).
   - `in_stock` (boolean): `true` chỉ lấy hàng còn tồn trong kho.
+  - `sold_by_stem` (boolean): `true` chỉ lấy hoa bán lẻ theo cành (dùng cho trang Tự tạo bó hoa); mỗi dòng trả thêm `sold_by_stem`. Chi tiết sản phẩm (`CAT02`) trả thêm `stem_head_size` — cỡ bông so với hoa hồng tính theo phần trăm (30–300, mặc định 100), chỉ dùng để vẽ bó xem trước.
   - `is_pinned` (boolean): `true` chỉ lấy hàng được ghim.
   - `sort` (string): `price_asc`, `price_desc`, `newest`, `popular`.
   - `page` (number): Mặc định `1`.

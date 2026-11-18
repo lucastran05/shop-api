@@ -1,0 +1,30 @@
+meta {
+  name: CART06 - Bouquet Options
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/bouquets/options
+  body: none
+  auth: none
+}
+
+docs {
+  Danh sách kiểu giấy gói (kèm phụ phí), dáng bó và dải chiều dài cành cho trang Tự tạo bó hoa.
+  Công khai: khách chưa đăng nhập vẫn dựng được bó trước khi thêm vào giỏ.
+}
+
+tests {
+  test("Status code is 200 OK", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().data.wraps).to.be.an("array");
+    expect(res.getBody().data.heights).to.be.an("array");
+    expect(res.getBody().data.stem_length.default).to.equal(50);
+  });
+  test("Kraft is free and ids are unique", function() {
+    const wraps = res.getBody().data.wraps;
+    expect(wraps.find((w) => w.id === "kraft").price).to.equal(0);
+    expect(new Set(wraps.map((w) => w.id)).size).to.equal(wraps.length);
+  });
+}
