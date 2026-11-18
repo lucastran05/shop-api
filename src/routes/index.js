@@ -19,8 +19,10 @@ import shopRoutes from './shop.routes.js';
 import notificationRoutes from './notification.routes.js';
 import voucherRoutes from './voucher.routes.js';
 import discoveryRoutes from '../modules/discovery/routes.js';
+import chatbotRoutes from './chatbot.routes.js';
 
 const router = Router();
+router.use('/chatbot', chatbotRoutes);
 
 // --- 1. Theo đặc tả Danh sách API ABC Shop (/api/v1/...) ---
 
