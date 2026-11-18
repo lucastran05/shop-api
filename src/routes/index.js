@@ -18,6 +18,7 @@ import chatRoutes from './chat.routes.js';
 import shopRoutes from './shop.routes.js';
 import notificationRoutes from './notification.routes.js';
 import voucherRoutes from './voucher.routes.js';
+import discoveryRoutes from '../modules/discovery/routes.js';
 import chatbotRoutes from './chatbot.routes.js';
 
 const router = Router();
@@ -75,5 +76,6 @@ router.use('/notifications', notificationRoutes);
 
 // Vouchers customer có thể kiểm tra trước khi đặt hàng
 router.use('/vouchers', voucherRoutes);
+router.use('/discovery', discoveryRoutes);
 
 export default router;

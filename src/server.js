@@ -3,6 +3,7 @@ import app from './app.js';
 import pool, { initDB } from './config/db.js';
 import { initializeStorage } from './services/upload-storage.js';
 import { attachChatSocket } from './services/chat-socket.js';
+import { migrateDiscovery, startDiscoveryRetention } from './modules/discovery/migration.js';
 
 const PORT = process.env.PORT || 5000;
 
@@ -10,6 +11,8 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   // Kết nối và kiểm tra DB
   await initDB();
+  await migrateDiscovery();
+  startDiscoveryRetention();
   await initializeStorage();
 
   const server = app.listen(PORT, () => {
