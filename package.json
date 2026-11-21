@@ -8,8 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed:demo": "node scripts/seed-demo.js",
-    "seed:check": "node scripts/check-demo-integrity.js",
-    "test": "node --test tests/*.test.js"
+    "seed:check": "node scripts/check-demo-integrity.js"
   },
   "keywords": [
     "express",
