@@ -4,7 +4,9 @@ import { removeStoredImage, storeImage } from "../services/upload-storage.js";
 import { withTransaction } from "../config/transaction.js";
 import pool from "../config/db.js";
 import { getProductPricing } from "../modules/catalog/productPricing.js";
-import { totalStock } from "../modules/catalog/productStock.js";
+import { parseJsonArray, totalStock } from "../modules/catalog/productStock.js";
+import { keepStemImageFields } from "../modules/catalog/stemFlowers.js";
+import { clampHeadSize } from "../modules/catalog/catalog.repository.js";
 import { AppError, BadRequestError, ForbiddenError, NotFoundError } from '../common/errors/AppError.js';
 import { asyncHandler } from '../common/utils/asyncHandler.js';
 
@@ -45,6 +47,7 @@ class ProductController {
 
     const result = await catalogRepository.findAllCustomer({
       flower_species: req.query.flower_species,
+      sold_by_stem: req.query.sold_by_stem,
       keyword: keyword || search || "",
       category_id: category_id || category || "",
       min_price: min_price !== undefined ? min_price : minPrice,
@@ -156,6 +159,8 @@ class ProductController {
       attributes,
       price,
       stock,
+      sold_by_stem,
+      stem_head_size,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -180,6 +185,8 @@ class ProductController {
       is_pinned: is_pinned ?? featured,
       allow_deposit: allow_deposit ?? deposit,
       deposit_rate: deposit_rate || 20,
+      sold_by_stem: Boolean(sold_by_stem),
+      stem_head_size,
       price: pricing.price || 0,
       old_price: pricing.old_price,
       stock: (hasVariants ? totalStock(variants) : stock) || 0,
@@ -224,9 +231,13 @@ class ProductController {
       deposit_rate,
       price,
       stock,
+      sold_by_stem,
+      stem_head_size,
     } = req.body;
 
     const updateFields = {};
+    if (sold_by_stem !== undefined) updateFields.sold_by_stem = Boolean(sold_by_stem);
+    if (stem_head_size !== undefined) updateFields.stem_head_size = clampHeadSize(stem_head_size);
     if (req.body.flower_species !== undefined) updateFields.flower_species = req.body.flower_species;
     if (name !== undefined) updateFields.name = name;
     if (category !== undefined) updateFields.category = category;
@@ -245,7 +256,7 @@ class ProductController {
     // Xử lý biến thể & kiểm tra tồn kho
     if (Array.isArray(variants)) {
       Object.assign(updateFields, getProductPricing(variants));
-      updateFields.variants = variants;
+      updateFields.variants = keepStemImageFields(variants, parseJsonArray(existing.variants));
       const totalVariantStock = totalStock(variants);
       updateFields.stock = totalVariantStock;
     } else if (stock !== undefined) {

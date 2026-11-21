@@ -278,3 +278,74 @@ export const PRODUCTS = [
     ],
   },
 ];
+
+// --- Hoa lẻ theo cành (products.sold_by_stem = TRUE) cho chức năng "Tự tạo bó hoa".
+// Mỗi biến thể là một màu: price = giá một cành, stock = số cành nhập đầu kỳ.
+// Ảnh cành ban đầu được vẽ bằng demo-data/stem-art.js (PNG nền trong suốt, flower + colors[0]);
+// `npm run import:stems` thay bằng ảnh Pexels theo `query`, hoặc theo `pexels_id` nếu chỉ định sẵn.
+// headSize là cỡ bông so với hoa hồng (100%), dùng để vẽ bó xem trước đúng tỉ lệ.
+// Tách riêng khỏi PRODUCTS để đơn hàng demo ngẫu nhiên vẫn giữ nguyên như trước.
+export const STEM_CATEGORY = 'Hoa lẻ theo cành';
+
+export const STEM_PRODUCTS = [
+  {
+    name: 'Hoa hồng cành',
+    category: STEM_CATEGORY,
+    headSize: 100,
+    description: 'Hồng Đà Lạt bán lẻ theo cành, cành dài 50 - 60 cm. Chọn số cành và màu để tự phối bó hoa.',
+    attributes: [origin('Đà Lạt'), careCutFlower],
+    flower: 'rose',
+    variants: [
+      { id: 'hong-canh-do', label: '1 cành', color: 'Đỏ', price: 20000, stock: 200, colors: ['#c81d3a'], query: 'single red rose stem' },
+      { id: 'hong-canh-hong', label: '1 cành', color: 'Hồng', price: 20000, stock: 150, colors: ['#ec7fa0'], query: 'single pink rose stem' },
+      { id: 'hong-canh-trang', label: '1 cành', color: 'Trắng', price: 22000, stock: 120, colors: ['#f5efe6'], query: 'single white rose stem' },
+    ],
+  },
+  {
+    name: 'Hoa baby cành',
+    category: STEM_CATEGORY,
+    headSize: 70,
+    description: 'Cành baby (gypsophila) li ti, dùng làm hoa nền cho bó hồng, tulip hoặc cúc.',
+    attributes: [origin('Đà Lạt'), careCutFlower],
+    flower: 'baby',
+    variants: [
+      { id: 'baby-canh-trang', label: '1 cành', color: 'Trắng', price: 10000, stock: 300, colors: ['#ffffff'], query: "white baby's breath gypsophila stem" },
+      { id: 'baby-canh-hong', label: '1 cành', color: 'Hồng phấn', price: 12000, stock: 100, colors: ['#f6cbd8'], query: "pink baby's breath gypsophila" },
+    ],
+  },
+  {
+    name: 'Hoa cúc họa mi cành',
+    category: STEM_CATEGORY,
+    headSize: 95,
+    description: 'Cúc họa mi và cúc vàng bán theo cành, tươi lâu 7 - 10 ngày.',
+    attributes: [origin('Hà Nội'), careCutFlower],
+    flower: 'daisy',
+    variants: [
+      { id: 'cuc-canh-trang', label: '1 cành', color: 'Trắng', price: 8000, stock: 250, colors: ['#ffffff'], query: 'single white daisy flower stem' },
+      { id: 'cuc-canh-vang', label: '1 cành', color: 'Vàng', price: 9000, stock: 180, colors: ['#f7c948'], query: 'single yellow chrysanthemum flower stem' },
+    ],
+  },
+  {
+    name: 'Hoa tulip cành',
+    category: STEM_CATEGORY,
+    headSize: 90,
+    description: 'Tulip Hà Lan bán lẻ theo cành, nở dần trong 5 - 7 ngày.',
+    attributes: [origin('Hà Lan'), careCutFlower],
+    flower: 'tulip',
+    variants: [
+      { id: 'tulip-canh-hong', label: '1 cành', color: 'Hồng', price: 45000, stock: 80, colors: ['#ee7fa8'], query: 'single pink tulip stem' },
+      { id: 'tulip-canh-vang', label: '1 cành', color: 'Vàng', price: 45000, stock: 60, colors: ['#f7c948'], query: 'single yellow tulip stem' },
+    ],
+  },
+  {
+    name: 'Hoa hướng dương cành',
+    category: STEM_CATEGORY,
+    headSize: 145,
+    description: 'Hướng dương bán lẻ theo cành, bông to 12 - 15 cm.',
+    attributes: [origin('Đà Lạt'), careCutFlower],
+    flower: 'sunflower',
+    variants: [
+      { id: 'hd-canh', label: '1 cành', color: 'Vàng', price: 30000, stock: 90, colors: ['#f6b100'], query: 'single sunflower stem' },
+    ],
+  },
+];

@@ -25,7 +25,8 @@ import communicationRepository from '../src/modules/communication/communication.
 import { currentStock, lockProduct } from '../src/modules/catalog/productStock.js';
 import { findProvinceByCode, getWardsByProvince } from '../src/constants/locations.js';
 import { removeStoredImage, storeImage } from '../src/services/upload-storage.js';
-import { CATEGORIES, PRODUCTS } from './demo-data/catalog.js';
+import { CATEGORIES, PRODUCTS, STEM_CATEGORY, STEM_PRODUCTS } from './demo-data/catalog.js';
+import { renderStemPng } from './demo-data/stem-art.js';
 import { checkIntegrity } from './check-demo-integrity.js';
 
 const DEMO_PASSWORD = 'Demo@1234';
@@ -90,13 +91,14 @@ const query = (sql, values) => pool.query(sql, values);
 async function resetDemoData() {
   const demoUsers = (await query('SELECT id, email FROM users WHERE email LIKE $1;', ['%' + DEMO_EMAIL_DOMAIN])).rows;
   const userIds = demoUsers.map((u) => u.id);
-  const productNames = PRODUCTS.map((p) => p.name);
+  const productNames = [...PRODUCTS, ...STEM_PRODUCTS].map((p) => p.name);
   const products = (await query('SELECT id, image, images, variants FROM products WHERE name = ANY($1);', [productNames])).rows;
 
   // Ảnh sản phẩm demo trên storage + metadata
   const imageUrls = new Set();
   for (const product of products) {
-    for (const url of [product.image, ...(product.images || []).map((i) => i.url), ...(product.variants || []).map((v) => v.image)]) {
+    const variantImages = (product.variants || []).flatMap((v) => [v.image, v.stem_image, v.stem_photo?.url]);
+    for (const url of [product.image, ...(product.images || []).map((i) => i.url), ...variantImages]) {
       if (url?.includes('/uploads/')) imageUrls.add(url);
     }
   }
@@ -109,7 +111,7 @@ async function resetDemoData() {
   await query('DELETE FROM vouchers WHERE code = ANY($1);', [VOUCHERS.map((v) => v.code)]);
   await query('DELETE FROM products WHERE id = ANY($1);', [products.map((p) => p.id)]); // kéo theo phiếu kho, giỏ, đánh giá
   await query('DELETE FROM uploads WHERE url = ANY($1);', [[...imageUrls]]);
-  await query('DELETE FROM categories c WHERE name = ANY($1) AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.id);', [CATEGORIES]);
+  await query('DELETE FROM categories c WHERE name = ANY($1) AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.id);', [[...CATEGORIES, STEM_CATEGORY]]);
   await query('DELETE FROM users WHERE id = ANY($1);', [userIds]); // kéo theo địa chỉ, giỏ, thông báo cá nhân
   await Promise.allSettled([...imageUrls].map((url) => removeStoredImage(url.split('/').pop())));
   console.log(`Đã xóa dữ liệu demo cũ: ${userIds.length} tài khoản, ${products.length} sản phẩm, ${imageUrls.size} ảnh.`);
@@ -153,15 +155,15 @@ async function createManager() {
 }
 
 // --- Danh mục, sản phẩm (ảnh upload lên storage như form admin) và nhập kho đầu kỳ
-async function uploadImage(variantId) {
-  const buffer = await readFile(new URL(`./demo-data/images/${variantId}.png`, import.meta.url));
+async function uploadImage(variantId, buffer, uploadedAt = SHOP_OPENED) {
+  buffer ??= await readFile(new URL(`./demo-data/images/${variantId}.png`, import.meta.url));
   const { fileName } = await storeImage({ buffer, mimetype: 'image/png', size: buffer.length });
   const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/+$/, '');
   const upload = await catalogRepository.createUpload({
     url: `${baseUrl}/uploads/${fileName}`, file_name: `${variantId}.png`,
     mime_type: 'image/png', size_bytes: buffer.length, purpose: 'product',
   });
-  await query('UPDATE uploads SET created_at = $1 WHERE id = $2;', [iso(SHOP_OPENED), upload.id]);
+  await query('UPDATE uploads SET created_at = $1 WHERE id = $2;', [iso(uploadedAt), upload.id]);
   return upload.url;
 }
 
@@ -199,8 +201,49 @@ async function createCatalog(manager) {
   return products;
 }
 
+// Hoa lẻ theo cành cho trang "Tự tạo bó hoa". Chạy được cả trên DB đã có dữ liệu demo:
+// chỉ tạo danh mục / sản phẩm còn thiếu, không đụng sản phẩm đã có.
+// Ảnh cành: PNG nền trong suốt vẽ sẵn (stem-art.js); `npm run import:stems` thay bằng ảnh Pexels.
+async function createStemCatalog(manager, createdAt = SHOP_OPENED) {
+  const categoryId = (await catalogRepository.findCategoryByName(STEM_CATEGORY))?.id
+    || (await catalogRepository.createCategory(STEM_CATEGORY)).id;
+  await query('UPDATE categories SET created_at = $1, updated_at = $1 WHERE id = $2 AND created_at > $1;', [iso(createdAt), categoryId]);
+
+  const products = [];
+  for (const product of STEM_PRODUCTS) {
+    const existing = (await query('SELECT id FROM products WHERE name = $1 LIMIT 1;', [product.name])).rows[0];
+    if (existing) {
+      products.push({ ...product, id: existing.id, created: false });
+      continue;
+    }
+    const variants = [];
+    for (const { id, label, color, price, colors } of product.variants) {
+      const image = await uploadImage(id, renderStemPng({ flower: product.flower, color: colors[0] }), createdAt);
+      variants.push({
+        id, label, color, price, old_price: null, stock_quantity: 0, stock: 0,
+        image, stem_image: image, stem_image_source: 'generated',
+      });
+    }
+    const cheapest = variants.reduce((min, v) => (v.price < min.price ? v : min));
+    const created = await catalogRepository.create({
+      name: product.name, category: STEM_CATEGORY, category_id: categoryId,
+      description: product.description, price: cheapest.price, old_price: null, stock: 0,
+      image: variants[0].image,
+      images: variants.map((v, i) => ({ id: String(i + 1), url: v.image, alt_text: `${product.name} ${v.color}`, sort_order: i + 1 })),
+      variants, attributes: product.attributes, is_active: true, allow_deposit: false,
+      stem_head_size: product.headSize,
+    });
+    await query('UPDATE products SET sold_by_stem = TRUE, created_at = $1, updated_at = $1 WHERE id = $2;', [iso(createdAt), created.id]);
+    for (const variant of product.variants) {
+      await adjustStock(created.id, variant.id, variant.stock, 'Nhập hàng đầu kỳ', manager, createdAt + HOUR);
+    }
+    products.push({ ...product, id: created.id, created: true });
+  }
+  return products;
+}
+
 async function adjustStock(productId, variantId, delta, reason, manager, time) {
-  const adjustment = await inventoryRepository.adjustInventory({ product_id: productId, variant_id: variantId, delta, reason, actor_id: manager.id });
+  const adjustment = await inventoryRepository.adjustInventory({ product_id: productId, variant_id: variantId, delta, reason, actor_id: manager?.id ?? null });
   await query('UPDATE inventory_adjustments SET created_at = $1 WHERE id = $2;', [iso(time), adjustment.id]);
 }
 
@@ -490,13 +533,22 @@ async function createChats(customers, manager) {
   return count;
 }
 
-// Hai khách đang để sẵn hàng trong giỏ
-async function fillCarts(customers, products) {
+// Hai khách đang để sẵn hàng trong giỏ; khách đầu tiên có thêm một bó tự tạo (3 hồng đỏ + 2 baby trắng)
+async function fillCarts(customers, products, stemProducts) {
   for (const customer of customers.slice(0, 2)) {
     for (const product of [products[0], products[15]]) {
       await cartRepository.addItem(customer.id, { product_id: product.id, variant_id: product.variants[0].id, quantity: 1 });
     }
   }
+  const rose = stemProducts.find((p) => p.flower === 'rose');
+  const baby = stemProducts.find((p) => p.flower === 'baby');
+  await cartRepository.addBouquet(customers[0].id, {
+    items: [
+      { product_id: rose.id, variant_id: 'hong-canh-do', stems: 3 },
+      { product_id: baby.id, variant_id: 'baby-canh-trang', stems: 2 },
+    ],
+    quantity: 1,
+  });
 }
 
 async function main() {
@@ -504,6 +556,10 @@ async function main() {
   if (process.argv.includes('--reset')) await resetDemoData();
   const existing = await query('SELECT 1 FROM users WHERE email = $1;', [MANAGER.email]);
   if (existing.rows.length || (await query("SELECT 1 FROM categories WHERE name = 'Hoa bó';")).rows.length) {
+    // DB cũ chưa có hoa cành: bổ sung để dùng được trang "Tự tạo bó hoa"
+    const manager = (await query('SELECT id FROM users WHERE email = $1;', [MANAGER.email])).rows[0] || null;
+    const added = (await createStemCatalog(manager, Date.now() - HOUR)).filter((p) => p.created);
+    if (added.length) console.log(`Đã bổ sung ${added.length} sản phẩm hoa lẻ theo cành: ${added.map((p) => p.name).join(', ')}.`);
     console.log('Dữ liệu demo đã có. Chạy lại với --reset để xóa và tạo lại.');
     return;
   }
@@ -512,12 +568,13 @@ async function main() {
     const manager = await createManager();
     const customers = await createCustomers();
     const products = await createCatalog(manager);
+    const stemProducts = await createStemCatalog(manager);
     const vouchers = await createVouchers(manager);
     const orders = await createOrders(customers, products, vouchers, manager);
     const reviews = await createReviews(orders);
     const promotions = await createPromotions();
     const messages = await createChats(customers, manager);
-    await fillCarts(customers, products);
+    await fillCarts(customers, products, stemProducts);
     await query(
       "UPDATE shop_settings SET description = $1, updated_at = CURRENT_TIMESTAMP WHERE description = 'Cửa hàng trực tuyến';",
       ['Hoa tươi và cây xanh giao nhanh trong ngày'],

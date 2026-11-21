@@ -5,6 +5,7 @@ import meRoutes from './me.routes.js';
 import locationRoutes from './location.routes.js';
 import categoryRoutes from './category.routes.js';
 import cartRoutes from './cart.routes.js';
+import bouquetRoutes from './bouquet.routes.js';
 import checkoutRoutes from './checkout.routes.js';
 import orderRoutes from './order.routes.js';
 import conversationRoutes from './conversation.routes.js';
@@ -18,8 +19,11 @@ import chatRoutes from './chat.routes.js';
 import shopRoutes from './shop.routes.js';
 import notificationRoutes from './notification.routes.js';
 import voucherRoutes from './voucher.routes.js';
+import discoveryRoutes from '../modules/discovery/routes.js';
+import chatbotRoutes from './chatbot.routes.js';
 
 const router = Router();
+router.use('/chatbot', chatbotRoutes);
 
 // --- 1. Theo đặc tả Danh sách API ABC Shop (/api/v1/...) ---
 
@@ -36,8 +40,11 @@ router.use('/locations', locationRoutes);
 // CAT03: /api/v1/categories
 router.use('/categories', categoryRoutes);
 
-// CART01 - CART04: /api/v1/cart
+// CART01 - CART05: /api/v1/cart
 router.use('/cart', cartRoutes);
+
+// CART06: /api/v1/bouquets
+router.use('/bouquets', bouquetRoutes);
 
 // CHK01: /api/v1/checkout
 router.use('/checkout', checkoutRoutes);
@@ -73,5 +80,6 @@ router.use('/notifications', notificationRoutes);
 
 // Vouchers customer có thể kiểm tra trước khi đặt hàng
 router.use('/vouchers', voucherRoutes);
+router.use('/discovery', discoveryRoutes);
 
 export default router;

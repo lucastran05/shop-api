@@ -3,6 +3,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../common/erro
 import { findProvinceByCode, findWardByCode } from '../../constants/locations.js';
 import { findVariant, parseJsonArray, variantStock } from '../catalog/productStock.js';
 import cartRepository from './cart.repository.js';
+import { assertStockDemand } from './customBouquet.js';
 import { voucherRepository } from './voucher.repository.js';
 
 const DELIVERY_METHODS = ['standard', 'express', 'pickup'];
@@ -93,6 +94,8 @@ function assertItemsOrderable(items) {
     }
     if (!item.is_available) throw new ConflictError('Sản phẩm không còn đủ tồn kho hoặc đã ngừng bán');
   }
+  // Bó hoa trừ kho theo từng cành: cộng nhu cầu của mọi dòng dùng chung một biến thể
+  assertStockDemand(items);
 }
 
 const recipientFromAddress = (address) => ({

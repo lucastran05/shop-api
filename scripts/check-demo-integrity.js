@@ -5,6 +5,14 @@ import { pathToFileURL } from 'node:url';
 
 const DEMO = "SELECT id FROM users WHERE email LIKE '%@demo.abcshop.vn'";
 const DEMO_ORDERS = `SELECT * FROM orders WHERE user_id IN (${DEMO})`;
+// Dòng sản phẩm thường (bó hoa tự tạo không có product_id, kiểm tra riêng theo thành phần)
+const PRODUCT_LINE = "coalesce(i.item_type, 'product') <> 'custom_bouquet'";
+// Số lượng đã bán theo từng biến thể: dòng thường + từng loại cành trong bó (số cành × số bó)
+const SOLD_UNITS = `
+  SELECT i.order_id, i.product_id, i.variant_id, i.quantity FROM order_items i WHERE ${PRODUCT_LINE}
+  UNION ALL
+  SELECT i.order_id, (c->>'product_id')::uuid, c->>'variant_id', (c->>'stems')::int * i.quantity
+  FROM order_items i, jsonb_array_elements(coalesce(i.components, '[]'::jsonb)) c WHERE i.item_type = 'custom_bouquet'`;
 
 const CHECKS = {
   // --- Người mua và thời gian
@@ -23,8 +31,13 @@ const CHECKS = {
 
   // --- Dòng hàng và tiền
   'dòng hàng trỏ sản phẩm/biến thể không tồn tại':
-    `SELECT count(*) FROM order_items i JOIN (${DEMO_ORDERS}) o ON o.id = i.order_id LEFT JOIN products p ON p.id = i.product_id
+    `SELECT count(*) FROM (${SOLD_UNITS}) i JOIN (${DEMO_ORDERS}) o ON o.id = i.order_id LEFT JOIN products p ON p.id = i.product_id
        WHERE p.id IS NULL OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p.variants) v WHERE v->>'id' = i.variant_id)`,
+  'bó hoa rỗng hoặc đơn giá bó khác tổng giá các cành + giấy gói':
+    `SELECT count(*) FROM order_items i JOIN (${DEMO_ORDERS}) o ON o.id = i.order_id WHERE i.item_type = 'custom_bouquet'
+       AND (jsonb_array_length(coalesce(i.components, '[]'::jsonb)) = 0 OR i.unit_price <> (
+         SELECT sum((c->>'stems')::int * (c->>'unit_price')::numeric) FROM jsonb_array_elements(i.components) c)
+         + coalesce((i.style->>'wrap_price')::numeric, 0))`,
   'mua sản phẩm trước khi sản phẩm được tạo':
     `SELECT count(*) FROM order_items i JOIN (${DEMO_ORDERS}) o ON o.id = i.order_id JOIN products p ON p.id = i.product_id WHERE o.created_at < p.created_at`,
   'đơn giá khác giá biến thể':
@@ -68,12 +81,12 @@ const CHECKS = {
 
   // --- Kho, voucher, đánh giá
   'tồn kho khác tổng các biến thể':
-    `SELECT count(*) FROM products p WHERE p.id IN (SELECT product_id FROM order_items WHERE order_id IN (SELECT id FROM (${DEMO_ORDERS}) x))
+    `SELECT count(*) FROM products p WHERE p.id IN (SELECT product_id FROM (${SOLD_UNITS}) s WHERE order_id IN (SELECT id FROM (${DEMO_ORDERS}) x))
        AND p.stock <> (SELECT coalesce(sum(coalesce((v->>'stock_quantity')::int, (v->>'stock')::int)), 0) FROM jsonb_array_elements(p.variants) v)`,
   'tồn kho khác (nhập kho - đã bán)':
-    `SELECT count(*) FROM products p WHERE p.id IN (SELECT product_id FROM order_items WHERE order_id IN (SELECT id FROM (${DEMO_ORDERS}) x))
+    `SELECT count(*) FROM products p WHERE p.id IN (SELECT product_id FROM (${SOLD_UNITS}) s WHERE order_id IN (SELECT id FROM (${DEMO_ORDERS}) x))
        AND p.stock <> (SELECT coalesce(sum(delta), 0) FROM inventory_adjustments WHERE product_id = p.id)
-                     - (SELECT coalesce(sum(i.quantity), 0) FROM order_items i JOIN orders o ON o.id = i.order_id
+                     - (SELECT coalesce(sum(i.quantity), 0) FROM (${SOLD_UNITS}) i JOIN orders o ON o.id = i.order_id
                         WHERE i.product_id = p.id AND o.status <> 'cancelled')`,
   'lượt dùng voucher khác số đơn đã dùng':
     `SELECT count(*) FROM vouchers v WHERE EXISTS (SELECT 1 FROM (${DEMO_ORDERS}) o WHERE o.coupon->>'id' = v.id::text)
