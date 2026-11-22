@@ -65,8 +65,6 @@ Mở thư mục `bruno/` trong Bruno, chọn environment `Local` và đặt `bas
 
 `src/constants/data/locations.json` lấy từ [vietnamese-provinces-database](https://github.com/thanglequoc/vietnamese-provinces-database/tree/8b78ba5118715e1fa81769286724db79346abf52/json), file `json/vn_only_simplified_json_generated_data_vn_units.json`, commit `8b78ba5118715e1fa81769286724db79346abf52` (31/10/2026). Giấy phép MIT được giữ ở `src/constants/data/LICENSE`. Bản hiện tại có 34 tỉnh/thành và 3.321 xã/phường/đặc khu. Các trường `Code`, `FullName`, `ProvinceCode` đổi thành `code`, `name`, `province_code`; `Wards` làm phẳng thành `wards`. Khi cập nhật, kiểm tra mã duy nhất và quan hệ tỉnh/xã; danh mục mới không tự cập nhật địa chỉ đã lưu.
 
-## Discovery
-
 API /api/v1/discovery phục vụ trang /kham-pha. Cấu hình GEMINI_API_KEY và tùy chọn GROQ_API_KEY trong .env gốc khi chạy Docker Compose. Các model có thể đổi qua DISCOVERY_GEMINI_MODEL và DISCOVERY_GROQ_MODEL; Cohere chỉ dùng cho đánh giá khi bật DISCOVERY_EVALUATE_COHERE. Xem docs/discovery/README.md để biết endpoint và cách kiểm tra.
 
 ## Hoa bán theo cành
