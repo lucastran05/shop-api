@@ -6,6 +6,9 @@ import { parseJsonArray } from './productStock.js';
 // Query string gửi giá trị dạng chuỗi: '' hoặc thiếu nghĩa là không lọc
 const hasValue = (value) => value !== undefined && value !== null && value !== '';
 const isTrue = (value) => value === true || value === 'true';
+// Cỡ bông so với hoa chuẩn, tính theo phần trăm
+export const clampHeadSize = (value) =>
+  Math.min(300, Math.max(30, Math.round(Number(value)) || 100));
 
 const SORTS = {
   newest: 'p.created_at DESC',
@@ -177,6 +180,7 @@ export class CatalogRepository {
     in_stock,
     flower_species,
     is_pinned,
+    sold_by_stem,
     sort = 'newest',
     page = 1,
     limit = 20,
@@ -185,6 +189,10 @@ export class CatalogRepository {
     const { conditions, values } = productFilters({ keyword, category_id, is_pinned, flower_species });
     conditions.unshift('(p.active = TRUE)');
     if (isTrue(in_stock)) conditions.push('p.stock > 0');
+    if (hasValue(sold_by_stem)) {
+      values.push(isTrue(sold_by_stem));
+      conditions.push(`p.sold_by_stem = $${values.length}`);
+    }
     if (hasValue(min_price)) {
       values.push(Number(min_price));
       conditions.push(`p.price >= $${values.length}`);
@@ -214,7 +222,7 @@ export class CatalogRepository {
     const dataQuery = `
       SELECT p.id, p.name, p.image, p.price, p.old_price, p.stock,
              p.category, p.category_id, c.name AS category_name,
-             COALESCE(p.is_pinned, p.featured, FALSE) AS is_pinned
+             COALESCE(p.is_pinned, p.featured, FALSE) AS is_pinned, p.sold_by_stem
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       ${whereClause}
@@ -235,6 +243,7 @@ export class CatalogRepository {
       old_price: row.old_price ? Number(row.old_price) : null,
       stock_quantity: Number(row.stock),
       is_pinned: Boolean(row.is_pinned),
+      sold_by_stem: Boolean(row.sold_by_stem),
     }));
 
     return {
@@ -328,7 +337,7 @@ export class CatalogRepository {
              COALESCE(p.is_pinned, p.featured, FALSE) AS is_pinned,
              COALESCE(p.allow_deposit, p.deposit, FALSE) AS allow_deposit,
              COALESCE(p.deposit_rate, 20) AS deposit_rate,
-             p.featured, p.active, p.deposit,
+             p.featured, p.active, p.deposit, p.sold_by_stem, p.stem_head_size,
              p.deposit_rate AS "depositRate",
              p.created_at AS "createdAt", p.updated_at AS "updatedAt",
              p.created_at, p.updated_at,
@@ -373,6 +382,8 @@ export class CatalogRepository {
       stock_quantity: Number(raw.stock),
       is_pinned: Boolean(raw.is_pinned),
       is_active: Boolean(raw.active),
+      sold_by_stem: Boolean(raw.sold_by_stem),
+      stem_head_size: Number(raw.stem_head_size) || 100,
       allow_deposit: Boolean(raw.allow_deposit),
       deposit_rate: Number(raw.deposit_rate) || 20,
       created_at: raw.created_at,
@@ -400,6 +411,8 @@ export class CatalogRepository {
     is_active = true,
     allow_deposit = false,
     deposit_rate = 20,
+    sold_by_stem = false,
+    stem_head_size = 100,
   }, client = this.db) {
     // Sản phẩm lưu cả tên lẫn id danh mục: có cái nào thì tra ra cái còn lại
     let categoryId = category_id;
@@ -413,9 +426,10 @@ export class CatalogRepository {
     const result = await client.query(`
       INSERT INTO products (
         name, category, category_id, description, price, old_price, stock, image, images,
-        variants, attributes, featured, is_pinned, active, deposit, allow_deposit, deposit_rate, flower_species
+        variants, attributes, featured, is_pinned, active, deposit, allow_deposit, deposit_rate, flower_species,
+        sold_by_stem, stem_head_size
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14, $14, $15, $16, $17, $18)
       RETURNING id;
     `, [
       name,
@@ -434,6 +448,8 @@ export class CatalogRepository {
       Boolean(allow_deposit),
       Number(deposit_rate) || 20,
       JSON.stringify(normalizeFlowerSpecies(flower_species)),
+      Boolean(sold_by_stem),
+      clampHeadSize(stem_head_size),
     ]);
     return result.rows[0];
   }
@@ -461,6 +477,8 @@ export class CatalogRepository {
       is_active: 'active',
       deposit: 'deposit',
       allow_deposit: 'allow_deposit',
+      sold_by_stem: 'sold_by_stem',
+      stem_head_size: 'stem_head_size',
       depositRate: 'deposit_rate',
       deposit_rate: 'deposit_rate',
     };

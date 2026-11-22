@@ -13,6 +13,9 @@ router.get('/', CartController.getCart);
 // CART02: Thêm vào giỏ
 router.post('/items', CartController.addItem);
 
+// CART05: Thêm bó hoa tự tạo (hoa bán theo cành)
+router.post('/bouquets', CartController.addBouquet);
+
 // CART03: Cập nhật số lượng
 router.patch('/items/:item_id', CartController.updateItem);
 

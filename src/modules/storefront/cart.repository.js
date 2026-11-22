@@ -1,6 +1,28 @@
 import pool from '../../config/db.js';
+import { withTransaction } from '../../config/transaction.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
 import { parseJsonArray, variantStock } from '../catalog/productStock.js';
+import {
+  CUSTOM_BOUQUET,
+  assertBouquetAddable,
+  bouquetKey,
+  bouquetLine,
+  normalizeBouquetItems,
+  normalizeBouquetQuantity,
+} from './customBouquet.js';
+import { normalizeBouquetStyle } from './bouquetStyle.js';
+
+// Đọc các sản phẩm hoa cành theo id (một truy vấn cho mọi bó trong giỏ)
+async function loadStemProducts(client, productIds) {
+  const ids = [...new Set(productIds.map(String))];
+  if (!ids.length) return new Map();
+  const { rows } = await client.query(
+    `SELECT id, name, image, stock, variants, active, sold_by_stem, allow_deposit, deposit_rate
+     FROM products WHERE id = ANY($1::uuid[]);`,
+    [ids],
+  );
+  return new Map(rows.map((row) => [String(row.id), { ...row, variants: parseJsonArray(row.variants) }]));
+}
 
 export class CartRepository {
   constructor(db = pool) {
@@ -22,20 +44,43 @@ export class CartRepository {
 
     const query = `
       SELECT ci.id, ci.product_id, ci.variant_id, ci.quantity, ci.created_at,
+             ci.item_type, ci.bouquet_components, ci.bouquet_style,
+             p.id AS joined_product_id,
              p.name AS product_name, p.image, p.price, p.stock, p.variants, p.active,
              p.allow_deposit, p.deposit_rate
       FROM cart_items ci
-      JOIN products p ON ci.product_id = p.id
+      LEFT JOIN products p ON ci.product_id = p.id
       WHERE ci.cart_id = $1
       ORDER BY ci.created_at DESC;
     `;
     const result = await client.query(query, [cart.id]);
+
+    // Dòng bó hoa không có product_id: giá tính lại từ giá cành hiện tại trong DB
+    const bouquetRows = result.rows.filter((row) => row.item_type === CUSTOM_BOUQUET);
+    const stemProducts = await loadStemProducts(
+      client,
+      bouquetRows.flatMap((row) => parseJsonArray(row.bouquet_components).map((component) => component.product_id)),
+    );
 
     const items = [];
     let subtotal = 0;
     let totalItems = 0;
 
     for (const row of result.rows) {
+      if (row.item_type === CUSTOM_BOUQUET) {
+        const line = bouquetLine({
+          id: row.id,
+          variant_id: row.variant_id,
+          quantity: row.quantity,
+          components: parseJsonArray(row.bouquet_components),
+          style: row.bouquet_style,
+        }, stemProducts);
+        subtotal += line.line_total;
+        totalItems += line.quantity;
+        items.push(line);
+        continue;
+      }
+      if (!row.joined_product_id) continue;
       let parsedVariants = parseJsonArray(row.variants);
 
       // Tìm biến thể tương ứng
@@ -52,6 +97,7 @@ export class CartRepository {
 
       items.push({
         id: row.id,
+        item_type: 'product',
         product_id: row.product_id,
         variant_id: row.variant_id,
         product_name: row.product_name,
@@ -113,6 +159,46 @@ export class CartRepository {
     }
 
     await client.query(`UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, [cart.id]);
+    return await this.getCart(userId, client);
+  }
+
+  // CART05: thêm bó hoa tự tạo. Chỉ nhận thành phần, kiểu gói và số bó; giá luôn tính lại từ DB.
+  addBouquet(userId, { items, quantity, wrap, height } = {}, client = this.db) {
+    const components = normalizeBouquetItems(items);
+    const qty = normalizeBouquetQuantity(quantity);
+    const style = normalizeBouquetStyle({ wrap, height });
+    if (client === this.db) {
+      return withTransaction(this.db, (tx) => this.insertBouquet(userId, components, qty, style, tx));
+    }
+    return this.insertBouquet(userId, components, qty, style, client);
+  }
+
+  async insertBouquet(userId, components, qty, style, client) {
+    const cart = await this.getOrCreateCart(userId, client);
+    // Khóa giỏ để hai lần thêm cùng bó đồng thời vẫn gộp vào một dòng
+    await client.query('SELECT id FROM carts WHERE id = $1 FOR UPDATE;', [cart.id]);
+    const variantId = bouquetKey(components, style);
+    const existing = await client.query(`
+      SELECT id, quantity FROM cart_items
+      WHERE cart_id = $1 AND item_type = $2 AND variant_id = $3 LIMIT 1;
+    `, [cart.id, CUSTOM_BOUQUET, variantId]);
+    const totalQuantity = (existing.rows[0]?.quantity || 0) + qty;
+
+    const products = await loadStemProducts(client, components.map((component) => component.product_id));
+    assertBouquetAddable(components, products, totalQuantity);
+
+    if (existing.rows.length > 0) {
+      await client.query(
+        'UPDATE cart_items SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2;',
+        [totalQuantity, existing.rows[0].id],
+      );
+    } else {
+      await client.query(`
+        INSERT INTO cart_items (cart_id, product_id, variant_id, quantity, item_type, bouquet_components, bouquet_style)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6);
+      `, [cart.id, variantId, qty, CUSTOM_BOUQUET, JSON.stringify(components), JSON.stringify(style)]);
+    }
+    await client.query('UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;', [cart.id]);
     return await this.getCart(userId, client);
   }
 
