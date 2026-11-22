@@ -69,3 +69,9 @@ Mở thư mục `bruno/` trong Bruno, chọn environment `Local` và đặt `bas
 ## Discovery
 
 API /api/v1/discovery phục vụ trang /kham-pha. Cấu hình GEMINI_API_KEY và tùy chọn GROQ_API_KEY trong .env gốc khi chạy Docker Compose. Các model có thể đổi qua DISCOVERY_GEMINI_MODEL và DISCOVERY_GROQ_MODEL; Cohere chỉ dùng cho đánh giá khi bật DISCOVERY_EVALUATE_COHERE. Xem docs/discovery/README.md để biết endpoint và cách kiểm tra.
+
+## Hoa bán theo cành
+
+Sản phẩm có thể bật **Bán theo cành**, với mỗi biến thể là một màu, giá và tồn kho theo số cành. Kiểu giấy gói và dáng bó nằm ở `src/modules/storefront/bouquetStyle.js`, được trả qua `GET /api/v1/bouquets/options`. Lệnh `npm run seed:demo` thêm hoa cành mẫu; `npm run import:stems` nhập ảnh cành từ Pexels hoặc thư mục ảnh của nhóm. Xem `npm run import:stems -- --help` để biết tùy chọn.
+
+Docker dùng stage production của Dockerfile. Sau khi thay source, chạy `docker compose up -d --build --wait` ở repo tổng.
