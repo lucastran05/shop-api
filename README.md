@@ -4,17 +4,16 @@ Backend Node.js/Express dùng PostgreSQL để lưu tài khoản, sản phẩm, 
 
 ## Chạy backend
 
-**Docker:** tại thư mục gốc, chuẩn bị `.env` theo `.env.example`, rồi chạy `docker compose up -d --build --wait`. Compose chờ PostgreSQL và MinIO healthy trước khi khởi động API.
+**Docker:** tại thư mục repo gốc, chạy `node scripts/setup-env.mjs`, rồi `docker compose up -d --build --wait`. Lệnh đầu tạo env cho cả repo gốc, backend và frontend, giữ nguyên file đã có. Compose chờ PostgreSQL và MinIO healthy trước khi khởi động API.
 
-**Node trực tiếp:** dùng PowerShell trong `shop-api`:
+**Node trực tiếp trong repo tổng:** tạo env và khởi động hạ tầng theo [README gốc](../README.md#phát-triển-riêng-từng-ứng-dụng). Sau đó, trong `shop-api`:
 
 ```powershell
-Copy-Item .env.example .env
-npm.cmd install
+npm.cmd ci
 npm.cmd run dev
 ```
 
-Chỉnh `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` và hai JWT secret trong `shop-api/.env`. PostgreSQL của Compose mở ở `localhost:5433` từ máy host, nên đặt `DB_PORT=5433` nếu dùng nó. Với MinIO Docker, dùng `MINIO_ENDPOINT=localhost`, `MINIO_PORT=9000` và credential từ `.env` gốc; hoặc đặt `UPLOAD_STORAGE=local`. Mailpit Docker nhận SMTP tại `127.0.0.1:1025`. API health: http://localhost:5000/api/health.
+Script ở repo tổng đã cấu hình `DB_PORT=5433`, credential PostgreSQL/MinIO đồng bộ với env gốc và SMTP Mailpit trên máy host. API health: http://localhost:5000/api/health. Nếu clone riêng repo backend, sao chép `.env.example` thành `.env`, tự điền database, JWT secret và cấu hình storage phù hợp trước khi chạy; script tạo env tự động nằm trong repo tổng.
 
 ## Cấu trúc source
 
