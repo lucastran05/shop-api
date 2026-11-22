@@ -66,15 +66,10 @@ Mở thư mục `bruno/` trong Bruno, chọn environment `Local` và đặt `bas
 
 `src/constants/data/locations.json` lấy từ [vietnamese-provinces-database](https://github.com/thanglequoc/vietnamese-provinces-database/tree/8b78ba5118715e1fa81769286724db79346abf52/json), file `json/vn_only_simplified_json_generated_data_vn_units.json`, commit `8b78ba5118715e1fa81769286724db79346abf52` (31/10/2026). Giấy phép MIT được giữ ở `src/constants/data/LICENSE`. Bản hiện tại có 34 tỉnh/thành và 3.321 xã/phường/đặc khu. Các trường `Code`, `FullName`, `ProvinceCode` đổi thành `code`, `name`, `province_code`; `Wards` làm phẳng thành `wards`. Khi cập nhật, kiểm tra mã duy nhất và quan hệ tỉnh/xã; danh mục mới không tự cập nhật địa chỉ đã lưu.
 
-## Hoa bán theo cành và ảnh cành ("Tự tạo bó hoa")
+API /api/v1/discovery phục vụ trang /kham-pha. Cấu hình GEMINI_API_KEY và tùy chọn GROQ_API_KEY trong .env gốc khi chạy Docker Compose. Các model có thể đổi qua DISCOVERY_GEMINI_MODEL và DISCOVERY_GROQ_MODEL; Cohere chỉ dùng cho đánh giá khi bật DISCOVERY_EVALUATE_COHERE. Xem docs/discovery/README.md để biết endpoint và cách kiểm tra.
 
-- Đánh dấu hoa bán theo cành bằng công tắc **Bán theo cành** trong form sản phẩm của trang quản trị. Mỗi biến thể là một màu, giá là giá một cành, tồn kho là số cành.
-- Kiểu giấy gói và dáng bó khai trong `src/modules/storefront/bouquetStyle.js` và trả cho web qua `GET /api/v1/bouquets/options`. Sửa giá giấy ở đây là mọi nơi đổi theo; phụ phí giấy cộng vào đơn giá dòng bó, dáng bó không ảnh hưởng giá.
+## Hoa bán theo cành
 
-- `npm run seed:demo` tạo danh mục "Hoa lẻ theo cành" (`products.sold_by_stem = TRUE`). Trên DB đã có dữ liệu demo, lệnh chỉ bổ sung các sản phẩm cành còn thiếu. Ảnh cành ban đầu là PNG nền trong suốt vẽ sẵn (`scripts/demo-data/stem-art.js`).
-- `npm run import:stems` thay ảnh cành bằng ảnh Pexels (`PEXELS_API_KEY`), tách nền bằng remove.bg nếu có `REMOVE_BG_API_KEY`. Tùy chọn: `-- --only=hong-canh-do`, `-- --force`, `-- --dry-run`. Hai key chỉ đặt trong `shop-api/.env`, không dùng tiền tố `VITE_`. Chọn ảnh thủ công bằng `pexels_id` của biến thể trong `scripts/demo-data/catalog.js`.
-- Tách nền ảnh hoa ngay trên web: trang quản trị → **Tách nền ảnh** (`/management/cutout`). Chọn ảnh, chỉnh độ nhạy / cọ xóa–giữ, rồi "Lưu làm ảnh cành" cho đúng loại hoa và màu, hoặc tải PNG về máy.
-- Ảnh nhóm tự chuẩn bị: `npm run import:stems -- --dir=E:\anh-canh` (thêm `--dry-run` để xem trước). Tên file là mã biến thể (`hong-canh-do.png`, `baby-canh-trang.webp`…). PNG/WebP nền trong suốt dùng cho ảnh xem trước bó hoa; ảnh còn nền chỉ hiện ở danh sách chọn hoa.
-- Ảnh gốc và thông tin tác giả lưu ở `variant.stem_photo`; ảnh dùng cho Canvas là `variant.stem_image`; `variant.image` của thẻ sản phẩm không bị ghi đè. Không có remove.bg thì ảnh gốc được đánh dấu `background_removed: false` và Canvas vẫn dùng ảnh vẽ dự phòng.
+Sản phẩm có thể bật **Bán theo cành**, với mỗi biến thể là một màu, giá và tồn kho theo số cành. Kiểu giấy gói và dáng bó nằm ở `src/modules/storefront/bouquetStyle.js`, được trả qua `GET /api/v1/bouquets/options`. Lệnh `npm run seed:demo` thêm hoa cành mẫu; `npm run import:stems` nhập ảnh cành từ Pexels hoặc thư mục ảnh của nhóm. Xem `npm run import:stems -- --help` để biết tùy chọn.
 
-Docker dùng stage production của Dockerfile, không bind node_modules hoặc source. Thay source thì chạy `docker compose up -d --build --wait` để áp dụng.
+Docker dùng stage production của Dockerfile. Sau khi thay source, chạy `docker compose up -d --build --wait` ở repo tổng.
